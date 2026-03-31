@@ -53,6 +53,20 @@ import {
 let isSyncing = false
 let lastSyncTime = 0
 const SYNC_INTERVAL = 5000 // 5 segundos
+const DATA_UPDATED_EVENT = 'pdv:data-updated'
+
+function notifyDataUpdated(key: string) {
+  window.dispatchEvent(new CustomEvent(DATA_UPDATED_EVENT, { detail: { key } }))
+}
+
+function syncLocalSnapshot(key: string, data: unknown) {
+  const next = JSON.stringify(data)
+  const current = localStorage.getItem(key)
+  if (current !== next) {
+    localStorage.setItem(key, next)
+    notifyDataUpdated(key)
+  }
+}
 
 /**
  * Sincronizar dados com Supabase (background)
@@ -90,10 +104,7 @@ export async function syncWithSupabase() {
 async function syncProductsInBackground() {
   try {
     const supabaseProducts = await getProductsFromSupabase()
-    if (supabaseProducts.length === 0) return
-
-    // Aqui você pode comparar com localStorage e resolver conflitos
-    // Por agora, apenas logs de confirmação
+    syncLocalSnapshot('pdv_products', supabaseProducts)
     console.debug(`[Sync] ${supabaseProducts.length} produtos sincronizados`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar produtos:', error)
@@ -103,7 +114,7 @@ async function syncProductsInBackground() {
 async function syncCustomersInBackground() {
   try {
     const supabaseCustomers = await getCustomersFromSupabase()
-    if (supabaseCustomers.length === 0) return
+    syncLocalSnapshot('pdv_customers', supabaseCustomers)
     console.debug(`[Sync] ${supabaseCustomers.length} clientes sincronizados`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar clientes:', error)
@@ -113,7 +124,7 @@ async function syncCustomersInBackground() {
 async function syncSalesInBackground() {
   try {
     const supabaseSales = await getSalesFromSupabase()
-    if (supabaseSales.length === 0) return
+    syncLocalSnapshot('pdv_sales', supabaseSales)
     console.debug(`[Sync] ${supabaseSales.length} vendas sincronizadas`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar vendas:', error)
@@ -123,7 +134,7 @@ async function syncSalesInBackground() {
 async function syncCashRegistersInBackground() {
   try {
     const supabaseRegisters = await getCashRegistersFromSupabase()
-    if (supabaseRegisters.length === 0) return
+    syncLocalSnapshot('pdv_cash_registers', supabaseRegisters)
     console.debug(`[Sync] ${supabaseRegisters.length} caixas sincronizadas`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar caixas:', error)
@@ -133,7 +144,7 @@ async function syncCashRegistersInBackground() {
 async function syncDebtPaymentsInBackground() {
   try {
     const supabasePayments = await getDebtPaymentsFromSupabase()
-    if (supabasePayments.length === 0) return
+    syncLocalSnapshot('pdv_debt_payments', supabasePayments)
     console.debug(`[Sync] ${supabasePayments.length} pagamentos de dívida sincronizados`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar pagamentos de dívida:', error)
@@ -143,7 +154,7 @@ async function syncDebtPaymentsInBackground() {
 async function syncStockEntriesInBackground() {
   try {
     const supabaseEntries = await getStockEntriesFromSupabase()
-    if (supabaseEntries.length === 0) return
+    syncLocalSnapshot('pdv_stock_entries', supabaseEntries)
     console.debug(`[Sync] ${supabaseEntries.length} entradas de estoque sincronizadas`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar estoque:', error)
@@ -153,7 +164,7 @@ async function syncStockEntriesInBackground() {
 async function syncSaleAdjustmentsInBackground() {
   try {
     const supabaseAdjustments = await getSaleAdjustmentsFromSupabase()
-    if (supabaseAdjustments.length === 0) return
+    syncLocalSnapshot('pdv_sale_adjustments', supabaseAdjustments)
     console.debug(`[Sync] ${supabaseAdjustments.length} ajustes de venda sincronizados`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar ajustes:', error)

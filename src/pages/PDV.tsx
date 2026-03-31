@@ -58,6 +58,20 @@ export default function PDVPage() {
   // Refresh products/customers when sales change (e.g., stock updated)
   useEffect(() => { setProductsData(getProducts()); }, [salesRefreshKey]);
   useEffect(() => { setCustomersData(getCustomers()); }, [salesRefreshKey]);
+  useEffect(() => {
+    const handleDataUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ key?: string }>;
+      if (customEvent.detail?.key === 'pdv_products') {
+        setProductsData(getProducts());
+      }
+      if (customEvent.detail?.key === 'pdv_customers') {
+        setCustomersData(getCustomers());
+      }
+    };
+
+    window.addEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+    return () => window.removeEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+  }, []);
 
   const filteredProducts = search.trim()
     ? products.filter(p =>

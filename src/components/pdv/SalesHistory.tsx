@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Eye, X, Clock, Receipt, Pencil, Search, Filter, RotateCcw, Printer } from 'lucide-react';
 import type { Sale, PaymentMethod } from '@/types/pdv';
 import { getSales, getAdjustmentsForSale, getEffectiveSaleTotal, getOpenCashRegister } from '@/lib/store';
@@ -54,6 +54,18 @@ export default function SalesHistory({ refreshKey }: Props) {
   const [minValue, setMinValue] = useState('');
   const [maxValue, setMaxValue] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  useEffect(() => {
+    const handleDataUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ key?: string }>;
+      const key = customEvent.detail?.key;
+      if (key === 'pdv_sales' || key === 'pdv_sale_adjustments' || key === 'pdv_cash_registers') {
+        setLocalRefresh(k => k + 1);
+      }
+    };
+
+    window.addEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+    return () => window.removeEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+  }, []);
 
   const openRegisterOpenedAt = getOpenCashRegister()?.openedAt;
 

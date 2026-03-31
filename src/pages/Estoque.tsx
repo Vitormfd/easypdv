@@ -23,6 +23,17 @@ export default function EstoquePage() {
 
   const reload = () => setProducts(getProducts());
   useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    const handleDataUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ key?: string }>;
+      if (customEvent.detail?.key === 'pdv_products') {
+        reload();
+      }
+    };
+
+    window.addEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+    return () => window.removeEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+  }, []);
 
   const [visibleCount, setVisibleCount] = useState(50);
 

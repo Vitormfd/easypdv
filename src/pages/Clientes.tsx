@@ -44,6 +44,18 @@ export default function ClientesPage() {
     setThresholdDays(t.days);
     setThresholdAmount(t.amount);
   }, []);
+  useEffect(() => {
+    const handleDataUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ key?: string }>;
+      const key = customEvent.detail?.key;
+      if (key === 'pdv_customers' || key === 'pdv_sales' || key === 'pdv_debt_payments') {
+        reload();
+      }
+    };
+
+    window.addEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+    return () => window.removeEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+  }, []);
 
   const resetForm = () => {
     setFormData({ name: '', phone: '', address: '', cpf: '', notes: '', creditLimit: '', monthlyLimit: '', status: 'active' });
