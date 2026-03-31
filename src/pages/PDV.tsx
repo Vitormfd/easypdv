@@ -204,6 +204,8 @@ export default function PDVPage() {
         setCreditWarning({ reasons: validation.reasons, override: false });
         return;
       }
+      // Validation passed, clear warning and continue
+      setCreditWarning(null);
     }
 
     const primaryMethod = payments.reduce((a, b) => a.amount >= b.amount ? a : b).method;
