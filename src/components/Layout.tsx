@@ -1,7 +1,8 @@
 import { ReactNode, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Package, Users, BarChart3, Menu, X, Trophy, ShoppingBasket, Settings2, Archive, FileText, CalendarClock } from 'lucide-react';
+import { ShoppingCart, Package, Users, BarChart3, Menu, X, Trophy, ShoppingBasket, Settings2, Archive, FileText, CalendarClock, LogOut } from 'lucide-react';
 import { getSystemName } from '@/lib/store';
+import { useAuth } from '@/hooks/useAuth';
 
 const navItems = [
   { to: '/', label: 'Caixa', icon: ShoppingCart },
@@ -18,7 +19,17 @@ const navItems = [
 export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error('Erro ao fazer logout:', error);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -56,12 +67,18 @@ export default function Layout({ children }: { children: ReactNode }) {
           <button onClick={() => navigate('/configuracoes')} className={`ml-1 w-9 h-9 rounded-lg flex items-center justify-center transition-all ${location.pathname === '/configuracoes' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`} title="Configurações">
             <Settings2 className="w-4 h-4" />
           </button>
+          <button onClick={handleLogout} className="ml-1 w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted transition-all" title="Sair">
+            <LogOut className="w-4 h-4" />
+          </button>
         </nav>
 
         {/* Mobile menu button */}
         <div className="md:hidden flex items-center gap-1">
           <button onClick={() => navigate('/configuracoes')} className="w-10 h-10 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted">
             <Settings2 className="w-5 h-5" />
+          </button>
+          <button onClick={handleLogout} className="w-10 h-10 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted">
+            <LogOut className="w-5 h-5" />
           </button>
           <button onClick={() => setMenuOpen(!menuOpen)} className="w-10 h-10 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted">
             {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
