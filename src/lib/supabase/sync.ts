@@ -54,6 +54,7 @@ let isSyncing = false
 let lastSyncTime = 0
 const SYNC_INTERVAL = 5000 // 5 segundos
 const DATA_UPDATED_EVENT = 'pdv:data-updated'
+const CASH_REOPEN_GRACE_MS = 30000
 
 function notifyDataUpdated(key: string) {
   window.dispatchEvent(new CustomEvent(DATA_UPDATED_EVENT, { detail: { key } }))
@@ -90,9 +91,13 @@ function syncCashRegistersSnapshot(supabaseRegisters: unknown) {
 
   const hasLocalOpen = localList.some((r: any) => r?.status === 'open')
   const hasSupabaseOpen = nextRegisters.some((r: any) => r?.status === 'open')
+  const justClosedAt = Number(localStorage.getItem('pdv_cash_just_closed_at') || 0)
+  const inCloseGraceWindow = justClosedAt > 0 && (Date.now() - justClosedAt) < CASH_REOPEN_GRACE_MS
 
   // Evita "caixa fechado" falso por atraso de sincronização do registro aberto.
   if (hasLocalOpen && !hasSupabaseOpen) return
+  // Evita "caixa aberto" falso logo após fechamento local.
+  if (!hasLocalOpen && hasSupabaseOpen && inCloseGraceWindow) return
 
   syncLocalSnapshot('pdv_cash_registers', nextRegisters)
 }
