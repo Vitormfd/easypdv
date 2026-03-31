@@ -9,7 +9,7 @@
  * - Sincronização: quando online, envia dados para Supabase
  */
 
-import { isSupabaseEnabled } from './client'
+import { getCurrentUserId, isSupabaseEnabled } from './client'
 import {
   getProductsFromSupabase,
   saveProductToSupabase,
@@ -59,9 +59,23 @@ function notifyDataUpdated(key: string) {
   window.dispatchEvent(new CustomEvent(DATA_UPDATED_EVENT, { detail: { key } }))
 }
 
-function syncLocalSnapshot(key: string, data: unknown) {
+function syncLocalSnapshot(key: string, data: unknown, options?: { preventShrink?: boolean }) {
   const next = JSON.stringify(data)
   const current = localStorage.getItem(key)
+
+  if (options?.preventShrink) {
+    try {
+      const currentParsed = current ? JSON.parse(current) : []
+      const nextParsed = Array.isArray(data) ? data : []
+      if (Array.isArray(currentParsed) && currentParsed.length > nextParsed.length) {
+        // Evita regressão visual quando a escrita local ainda não foi refletida no Supabase.
+        return
+      }
+    } catch {
+      // Se falhar parse, segue fluxo padrão de atualização.
+    }
+  }
+
   if (current !== next) {
     localStorage.setItem(key, next)
     notifyDataUpdated(key)
@@ -74,6 +88,10 @@ function syncLocalSnapshot(key: string, data: unknown) {
  */
 export async function syncWithSupabase() {
   if (!isSupabaseEnabled() || isSyncing) return
+
+  // Evita sobrescrever cache local com listas vazias antes do login.
+  const userId = await getCurrentUserId()
+  if (!userId) return
 
   const now = Date.now()
   if (now - lastSyncTime < SYNC_INTERVAL) return
@@ -104,7 +122,7 @@ export async function syncWithSupabase() {
 async function syncProductsInBackground() {
   try {
     const supabaseProducts = await getProductsFromSupabase()
-    syncLocalSnapshot('pdv_products', supabaseProducts)
+    syncLocalSnapshot('pdv_products', supabaseProducts, { preventShrink: true })
     console.debug(`[Sync] ${supabaseProducts.length} produtos sincronizados`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar produtos:', error)
@@ -114,7 +132,7 @@ async function syncProductsInBackground() {
 async function syncCustomersInBackground() {
   try {
     const supabaseCustomers = await getCustomersFromSupabase()
-    syncLocalSnapshot('pdv_customers', supabaseCustomers)
+    syncLocalSnapshot('pdv_customers', supabaseCustomers, { preventShrink: true })
     console.debug(`[Sync] ${supabaseCustomers.length} clientes sincronizados`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar clientes:', error)
@@ -124,7 +142,7 @@ async function syncCustomersInBackground() {
 async function syncSalesInBackground() {
   try {
     const supabaseSales = await getSalesFromSupabase()
-    syncLocalSnapshot('pdv_sales', supabaseSales)
+    syncLocalSnapshot('pdv_sales', supabaseSales, { preventShrink: true })
     console.debug(`[Sync] ${supabaseSales.length} vendas sincronizadas`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar vendas:', error)

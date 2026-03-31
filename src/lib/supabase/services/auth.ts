@@ -18,6 +18,12 @@ export interface SignInData {
   password: string
 }
 
+function getEmailRedirectTo(): string {
+  const configuredUrl = (import.meta.env.VITE_APP_URL || '').trim()
+  const baseUrl = configuredUrl || window.location.origin
+  return `${baseUrl}/login`
+}
+
 /**
  * Sign up new user with email and password
  */
@@ -28,6 +34,7 @@ export async function signUp(data: SignUpData): Promise<AuthUser> {
       email: data.email,
       password: data.password,
       options: {
+        emailRedirectTo: getEmailRedirectTo(),
         data: {
           name: data.name,
         },

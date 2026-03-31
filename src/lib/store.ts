@@ -215,7 +215,9 @@ function getOne<T>(key: string): T | null {
 export function getCashRegisters(): CashRegister[] { return get<CashRegister>('pdv_cash_registers'); }
 
 export function getOpenCashRegister(): CashRegister | null {
-  return getCashRegisters().find(c => c.status === 'open') || null;
+  const openRegisters = getCashRegisters().filter(c => c.status === 'open');
+  if (openRegisters.length === 0) return null;
+  return openRegisters.sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())[0];
 }
 
 export function openCashRegister(openingAmount: number): CashRegister {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { Archive, CheckCircle, AlertTriangle, Clock, Download } from 'lucide-react';
 import { getCashRegisters } from '@/lib/store';
 import { formatCurrency, formatDateTime } from '@/lib/format';
@@ -6,11 +6,26 @@ import { downloadRegisterBackup } from '@/lib/plans';
 import { toast } from 'sonner';
 
 export default function CaixasPage() {
-  const registers = useMemo(() =>
-    getCashRegisters()
-      .sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()),
-    []
+  const [registers, setRegisters] = useState(() =>
+    getCashRegisters().sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())
   );
+
+  useEffect(() => {
+    const reload = () => {
+      setRegisters(getCashRegisters().sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()));
+    };
+
+    const handleDataUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ key?: string }>;
+      if (customEvent.detail?.key === 'pdv_cash_registers') {
+        reload();
+      }
+    };
+
+    reload();
+    window.addEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+    return () => window.removeEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+  }, []);
 
   const handleBackup = (r: typeof registers[0]) => {
     try {
@@ -64,7 +79,7 @@ export default function CaixasPage() {
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold">
                         <Clock className="w-3 h-3" /> Aberto
                       </span>
-                    ) : r.difference === 0 ? (
+                    ) : r.difference != null && r.difference === 0 ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-success/10 text-success text-xs font-semibold">
                         <CheckCircle className="w-3 h-3" /> OK
                       </span>

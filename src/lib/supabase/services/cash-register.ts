@@ -22,9 +22,9 @@ export async function getCashRegistersFromSupabase(): Promise<CashRegister[]> {
       openedAt: r.opened_at,
       closedAt: r.closed_at,
       openingAmount: parseFloat(r.opening_amount),
-      closingAmount: r.closing_amount ? parseFloat(r.closing_amount) : undefined,
-      expectedAmount: r.expected_amount ? parseFloat(r.expected_amount) : undefined,
-      difference: r.difference ? parseFloat(r.difference) : undefined,
+      closingAmount: r.closing_amount != null ? parseFloat(r.closing_amount) : undefined,
+      expectedAmount: r.expected_amount != null ? parseFloat(r.expected_amount) : undefined,
+      difference: r.difference != null ? parseFloat(r.difference) : undefined,
       totalSales: parseFloat(r.total_sales),
       totalDinheiro: parseFloat(r.total_dinheiro),
       totalPix: parseFloat(r.total_pix),
@@ -51,7 +51,9 @@ export async function getOpenCashRegisterFromSupabase(): Promise<CashRegister | 
       .select('*')
       .eq('user_id', userId)
       .eq('status', 'open')
-      .single()
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
     if (error && error.code !== 'PGRST116') throw error // PGRST116 = no rows found
 
@@ -62,9 +64,9 @@ export async function getOpenCashRegisterFromSupabase(): Promise<CashRegister | 
       openedAt: data.opened_at,
       closedAt: data.closed_at,
       openingAmount: parseFloat(data.opening_amount),
-      closingAmount: data.closing_amount ? parseFloat(data.closing_amount) : undefined,
-      expectedAmount: data.expected_amount ? parseFloat(data.expected_amount) : undefined,
-      difference: data.difference ? parseFloat(data.difference) : undefined,
+      closingAmount: data.closing_amount != null ? parseFloat(data.closing_amount) : undefined,
+      expectedAmount: data.expected_amount != null ? parseFloat(data.expected_amount) : undefined,
+      difference: data.difference != null ? parseFloat(data.difference) : undefined,
       totalSales: parseFloat(data.total_sales),
       totalDinheiro: parseFloat(data.total_dinheiro),
       totalPix: parseFloat(data.total_pix),
@@ -113,9 +115,9 @@ export async function openCashRegisterInSupabase(openingAmount: number): Promise
       openedAt: data.opened_at,
       closedAt: data.closed_at,
       openingAmount: parseFloat(data.opening_amount),
-      closingAmount: data.closing_amount ? parseFloat(data.closing_amount) : undefined,
-      expectedAmount: data.expected_amount ? parseFloat(data.expected_amount) : undefined,
-      difference: data.difference ? parseFloat(data.difference) : undefined,
+      closingAmount: data.closing_amount != null ? parseFloat(data.closing_amount) : undefined,
+      expectedAmount: data.expected_amount != null ? parseFloat(data.expected_amount) : undefined,
+      difference: data.difference != null ? parseFloat(data.difference) : undefined,
       totalSales: parseFloat(data.total_sales),
       totalDinheiro: parseFloat(data.total_dinheiro),
       totalPix: parseFloat(data.total_pix),
@@ -169,6 +171,13 @@ export async function closeCashRegisterInSupabase(closingAmount: number): Promis
           else if (p.method === 'cartao_credito' || p.method === 'cartao_debito') totalCartao += amount
           else if (p.method === 'fiado') totalFiado += amount
         })
+      } else {
+        // Fallback para vendas legadas sem registros em sale_payments
+        const amount = parseFloat(sale.total)
+        if (sale.payment_method === 'dinheiro') totalDinheiro += amount
+        else if (sale.payment_method === 'pix') totalPix += amount
+        else if (sale.payment_method === 'cartao_credito' || sale.payment_method === 'cartao_debito') totalCartao += amount
+        else if (sale.payment_method === 'fiado') totalFiado += amount
       }
     }
 
@@ -201,9 +210,9 @@ export async function closeCashRegisterInSupabase(closingAmount: number): Promis
       openedAt: data.opened_at,
       closedAt: data.closed_at,
       openingAmount: parseFloat(data.opening_amount),
-      closingAmount: data.closing_amount ? parseFloat(data.closing_amount) : undefined,
-      expectedAmount: data.expected_amount ? parseFloat(data.expected_amount) : undefined,
-      difference: data.difference ? parseFloat(data.difference) : undefined,
+      closingAmount: data.closing_amount != null ? parseFloat(data.closing_amount) : undefined,
+      expectedAmount: data.expected_amount != null ? parseFloat(data.expected_amount) : undefined,
+      difference: data.difference != null ? parseFloat(data.difference) : undefined,
       totalSales: parseFloat(data.total_sales),
       totalDinheiro: parseFloat(data.total_dinheiro),
       totalPix: parseFloat(data.total_pix),
