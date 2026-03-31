@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 20% 97%;
+    --foreground: 30 10% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 30 10% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 10% 15%;
+    --primary: 142 50% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 35 80% 52%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 40 15% 92%;
+    --muted-foreground: 30 8% 50%;
+    --accent: 210 60% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 65% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 50% 38%;
+    --success-foreground: 0 0% 100%;
+    --warning: 35 80% 52%;
+    --warning-foreground: 0 0% 100%;
+    --border: 35 15% 85%;
+    --input: 35 15% 85%;
+    --ring: 142 50% 38%;
+    --radius: 0.75rem;
+    --sidebar-background: 30 15% 95%;
+    --sidebar-foreground: 30 10% 25%;
+    --sidebar-primary: 142 50% 38%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 35 20% 90%;
+    --sidebar-accent-foreground: 30 10% 25%;
+    --sidebar-border: 35 15% 85%;
+    --sidebar-ring: 142 50% 38%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-pdv {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg font-semibold text-lg px-6 py-4 transition-all duration-150 ease-out active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-pdv-primary {
+    @apply btn-pdv bg-primary text-primary-foreground hover:brightness-110;
+  }
+  .btn-pdv-secondary {
+    @apply btn-pdv bg-secondary text-secondary-foreground hover:brightness-110;
+  }
+  .btn-pdv-outline {
+    @apply btn-pdv border-2 border-border bg-card text-foreground hover:bg-muted;
+  }
+  .btn-pdv-danger {
+    @apply btn-pdv bg-destructive text-destructive-foreground hover:brightness-110;
+  }
+  .btn-pdv-ghost {
+    @apply btn-pdv text-foreground hover:bg-muted;
+  }
+  .card-pdv {
+    @apply bg-card rounded-xl border border-border shadow-sm;
+  }
+  .input-pdv {
+    @apply w-full rounded-lg border-2 border-input bg-card px-4 py-3 text-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all;
+  }
+}
