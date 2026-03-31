@@ -82,6 +82,21 @@ function syncLocalSnapshot(key: string, data: unknown, options?: { preventShrink
   }
 }
 
+function syncCashRegistersSnapshot(supabaseRegisters: unknown) {
+  const nextRegisters = Array.isArray(supabaseRegisters) ? supabaseRegisters : []
+  const currentRaw = localStorage.getItem('pdv_cash_registers')
+  const currentRegisters = currentRaw ? JSON.parse(currentRaw) : []
+  const localList = Array.isArray(currentRegisters) ? currentRegisters : []
+
+  const hasLocalOpen = localList.some((r: any) => r?.status === 'open')
+  const hasSupabaseOpen = nextRegisters.some((r: any) => r?.status === 'open')
+
+  // Evita "caixa fechado" falso por atraso de sincronização do registro aberto.
+  if (hasLocalOpen && !hasSupabaseOpen) return
+
+  syncLocalSnapshot('pdv_cash_registers', nextRegisters)
+}
+
 /**
  * Sincronizar dados com Supabase (background)
  * Chamado periodicamente
@@ -152,7 +167,7 @@ async function syncSalesInBackground() {
 async function syncCashRegistersInBackground() {
   try {
     const supabaseRegisters = await getCashRegistersFromSupabase()
-    syncLocalSnapshot('pdv_cash_registers', supabaseRegisters)
+    syncCashRegistersSnapshot(supabaseRegisters)
     console.debug(`[Sync] ${supabaseRegisters.length} caixas sincronizadas`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar caixas:', error)
