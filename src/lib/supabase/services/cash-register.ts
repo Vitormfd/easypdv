@@ -154,14 +154,25 @@ export async function closeCashRegisterInSupabase(closingAmount: number): Promis
     // Calcular totais por método de pagamento
     let totalDinheiro = 0, totalPix = 0, totalCartao = 0, totalFiado = 0
     let totalSales = 0
+    let salesCount = 0
 
     for (const sale of sales || []) {
+      const { data: saleItems } = await supabase
+        .from('sale_items')
+        .select('id')
+        .eq('sale_id', sale.id)
+
+      const isDebtPayment = (saleItems || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0
+
       const { data: payments } = await supabase
         .from('sale_payments')
         .select('*')
         .eq('sale_id', sale.id)
 
-      totalSales += parseFloat(sale.total)
+      if (!isDebtPayment) {
+        totalSales += parseFloat(sale.total)
+        salesCount += 1
+      }
 
       if (payments && payments.length > 0) {
         payments.forEach(p => {
@@ -196,7 +207,7 @@ export async function closeCashRegisterInSupabase(closingAmount: number): Promis
         total_pix: totalPix,
         total_cartao: totalCartao,
         total_fiado: totalFiado,
-        sales_count: sales?.length || 0,
+        sales_count: salesCount,
         status: 'closed',
       })
       .eq('id', register.id)

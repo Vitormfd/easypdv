@@ -39,6 +39,7 @@ export interface Sale {
   customerId?: string;
   customerName?: string;
   fiadoAmount?: number;
+  isDebtPayment?: boolean;
   createdAt: string;
 }
 

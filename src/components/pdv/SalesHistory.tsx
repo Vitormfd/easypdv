@@ -39,6 +39,10 @@ function hasFiado(sale: Sale): boolean {
   return sale.payments?.some(p => p.method === 'fiado') || sale.paymentMethod === 'fiado';
 }
 
+function isDebtPaymentSale(sale: Sale): boolean {
+  return !!sale.isDebtPayment || (sale.items?.length === 0 && !!sale.customerId && sale.total > 0);
+}
+
 interface Props {
   refreshKey: number;
 }
@@ -125,8 +129,9 @@ export default function SalesHistory({ refreshKey }: Props) {
   };
 
   const daySummary = useMemo(() => {
-    const totalSold = todaySales.reduce((a, s) => a + s.total, 0);
+    const totalSold = todaySales.reduce((a, s) => a + (isDebtPaymentSale(s) ? 0 : s.total), 0);
     const totalFiado = todaySales.reduce((a, s) => {
+      if (isDebtPaymentSale(s)) return a;
       if (s.fiadoAmount) return a + s.fiadoAmount;
       if (s.paymentMethod === 'fiado') return a + s.total;
       return a;
@@ -234,11 +239,15 @@ export default function SalesHistory({ refreshKey }: Props) {
                 const time = new Date(sale.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
                 const adjustments = getAdjustmentsForSale(sale.id);
                 const isAdjusted = adjustments.length > 0;
+                const isDebtPayment = isDebtPaymentSale(sale);
                 const effectiveTotal = isAdjusted ? getEffectiveSaleTotal(sale) : sale.total;
                 return (
                   <tr key={sale.id} className="hover:bg-muted/30 transition-colors">
                     <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
                       {filtered.length - idx}
+                      {isDebtPayment && (
+                        <span className="ml-1 text-[10px] bg-success/15 text-success px-1.5 py-0.5 rounded font-semibold">Recebimento</span>
+                      )}
                       {isAdjusted && (
                         <span className="ml-1 text-[10px] bg-warning/15 text-warning px-1.5 py-0.5 rounded font-semibold">Ajustada</span>
                       )}
@@ -260,6 +269,11 @@ export default function SalesHistory({ refreshKey }: Props) {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex flex-wrap gap-1">
+                        {isDebtPayment && (
+                          <span className="inline-block px-2 py-0.5 rounded-md text-xs font-medium bg-success/15 text-success">
+                            Recebimento
+                          </span>
+                        )}
                         {sale.payments?.length ? (
                           sale.payments.map(p => (
                             <span key={p.method} className={`inline-block px-2 py-0.5 rounded-md text-xs font-medium ${paymentColor(p.method)}`}>
@@ -284,6 +298,7 @@ export default function SalesHistory({ refreshKey }: Props) {
                         </button>
                         <button
                           onClick={() => setEditingSale(sale)}
+                          disabled={isDebtPayment}
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all active:scale-95"
                           title="Editar / Ajustar"
                         >
@@ -311,7 +326,7 @@ export default function SalesHistory({ refreshKey }: Props) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedSale(null)}>
           <div className="bg-card rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto animate-fade-in-up" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-border">
-              <h3 className="font-bold text-lg">Detalhes da Venda</h3>
+              <h3 className="font-bold text-lg">{isDebtPaymentSale(selectedSale) ? 'Detalhes do Recebimento' : 'Detalhes da Venda'}</h3>
               <button onClick={() => setSelectedSale(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-muted transition-all active:scale-95">
                 <X className="w-4 h-4" />
               </button>
@@ -324,13 +339,22 @@ export default function SalesHistory({ refreshKey }: Props) {
 
               {/* Products */}
               <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Produtos</p>
-                {selectedSale.items.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between py-1.5 text-sm">
-                    <span>{item.quantity}x {item.productName}</span>
-                    <span className="font-medium tabular-nums">{formatCurrency(item.subtotal)}</span>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  {isDebtPaymentSale(selectedSale) ? 'Origem' : 'Produtos'}
+                </p>
+                {isDebtPaymentSale(selectedSale) ? (
+                  <div className="flex items-center justify-between py-1.5 text-sm">
+                    <span>Recebimento de dívida (fiado)</span>
+                    <span className="font-medium tabular-nums">{formatCurrency(selectedSale.total)}</span>
                   </div>
-                ))}
+                ) : (
+                  selectedSale.items.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between py-1.5 text-sm">
+                      <span>{item.quantity}x {item.productName}</span>
+                      <span className="font-medium tabular-nums">{formatCurrency(item.subtotal)}</span>
+                    </div>
+                  ))
+                )}
               </div>
 
               {/* Payments */}

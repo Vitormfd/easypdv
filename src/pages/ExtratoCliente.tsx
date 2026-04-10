@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, Filter, X, Search, Eye, EyeOff } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Customer } from '@/types/pdv';
-import { getCustomers, getSales, getDebtPayments, getSaleAdjustments, getCustomerDebt } from '@/lib/store';
-import { formatCurrency, formatDate } from '@/lib/format';
+import type { Customer, Sale } from '@/types/pdv';
+import { getCustomers, getSales, getDebtPayments, getSaleAdjustments, getCustomerDebt, getLatestSaleItems, getEffectiveSaleTotal } from '@/lib/store';
+import { formatCurrency, formatDate, formatDateTime, paymentMethodLabels } from '@/lib/format';
 import PlanGate from '@/components/PlanGate';
 
 export default function ExtratoClientePage() {
@@ -22,6 +22,7 @@ interface Transaction {
   debit: number;
   credit: number;
   balance: number;
+  saleId?: string;
 }
 
 type PeriodFilter = 'all' | 'today' | 'week' | 'month';
@@ -38,6 +39,7 @@ function ExtratoContent() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [hideValues, setHideValues] = useState(false);
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const mask = (val: string) => hideValues ? '••••' : val;
 
   useEffect(() => { setCustomers(getCustomers()); }, []);
@@ -61,6 +63,7 @@ function ExtratoContent() {
           description: `Compra fiado: ${productNames}`,
           debit: fiadoAmt,
           credit: 0,
+          saleId: s.id,
         });
       }
     });
@@ -89,6 +92,7 @@ function ExtratoContent() {
           description: `Ajuste de venda (${adj.reason || 'sem motivo'})`,
           debit: adj.difference > 0 ? adj.difference : 0,
           credit: adj.difference < 0 ? Math.abs(adj.difference) : 0,
+          saleId: sale.id,
         });
       }
     });
@@ -254,14 +258,22 @@ function ExtratoContent() {
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Data</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Tipo</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Descrição</th>
-                      <th className="text-right px-4 py-3 font-semibold text-destructive">Débito</th>
-                      <th className="text-right px-4 py-3 font-semibold text-success">Crédito</th>
+                      <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Valor</th>
                       <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Saldo</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {filteredTransactions.map(t => (
-                      <tr key={t.id} className="hover:bg-muted/30 transition-colors">
+                      <tr
+                        key={t.id}
+                        className={`hover:bg-muted/30 transition-colors ${t.saleId ? 'cursor-pointer' : ''}`}
+                        onClick={() => {
+                          if (!t.saleId) return;
+                          const sale = getSales().find(s => s.id === t.saleId);
+                          if (sale) setSelectedSale(sale);
+                        }}
+                        title={t.saleId ? 'Clique para ver detalhes da venda' : undefined}
+                      >
                         <td className="px-4 py-3 tabular-nums whitespace-nowrap">{formatDate(t.date)}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium ${typeColors[t.type]}`}>
@@ -270,11 +282,10 @@ function ExtratoContent() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate">{t.description}</td>
-                        <td className="px-4 py-3 text-right font-medium tabular-nums text-destructive">
-                          {t.debit > 0 ? mask(formatCurrency(t.debit)) : ''}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium tabular-nums text-success">
-                          {t.credit > 0 ? mask(formatCurrency(t.credit)) : ''}
+                        <td className={`px-4 py-3 text-right font-medium tabular-nums ${t.debit > 0 ? 'text-destructive' : 'text-success'}`}>
+                          {t.debit > 0
+                            ? mask(formatCurrency(t.debit))
+                            : `-${mask(formatCurrency(t.credit))}`}
                         </td>
                         <td className={`px-4 py-3 text-right font-bold tabular-nums ${t.balance > 0 ? 'text-destructive' : 'text-success'}`}>
                           {mask(formatCurrency(t.balance))}
@@ -287,28 +298,51 @@ function ExtratoContent() {
             )}
           </div>
 
-          {/* Summary */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="card-pdv p-4 text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Débitos</p>
-              <p className="text-lg font-extrabold tabular-nums text-destructive">
-                {mask(formatCurrency(transactions.reduce((a, t) => a + t.debit, 0)))}
-              </p>
+        </>
+      )}
+
+      {selectedSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedSale(null)}>
+          <div className="bg-card rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto animate-fade-in-up" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h3 className="font-bold text-lg">Detalhes da Venda</h3>
+              <button onClick={() => setSelectedSale(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-muted transition-all active:scale-95">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <div className="card-pdv p-4 text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Créditos</p>
-              <p className="text-lg font-extrabold tabular-nums text-success">
-                {mask(formatCurrency(transactions.reduce((a, t) => a + t.credit, 0)))}
-              </p>
-            </div>
-            <div className="card-pdv p-4 text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Saldo Atual</p>
-              <p className={`text-lg font-extrabold tabular-nums ${currentDebt > 0 ? 'text-destructive' : 'text-success'}`}>
-                {currentDebt > 0 ? mask(formatCurrency(currentDebt)) : 'Em dia'}
-              </p>
+            <div className="p-4 space-y-4">
+              <div className="text-sm text-muted-foreground">
+                {formatDateTime(selectedSale.createdAt)}
+                {selectedSale.customerName && <span className="ml-2 font-medium text-foreground">• {selectedSale.customerName}</span>}
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Itens</p>
+                {getLatestSaleItems(selectedSale).map((item, i) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 text-sm">
+                    <span>{item.quantity}x {item.productName}</span>
+                    <span className="font-medium tabular-nums">{formatCurrency(item.subtotal)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pagamento</p>
+                {(selectedSale.payments?.length ? selectedSale.payments : [{ method: selectedSale.paymentMethod, amount: selectedSale.total }]).map((p, idx) => (
+                  <div key={`${p.method}-${idx}`} className="flex items-center justify-between py-1.5 text-sm">
+                    <span>{paymentMethodLabels[p.method]}</span>
+                    <span className="font-medium tabular-nums">{formatCurrency(p.amount)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-border">
+                <span className="font-semibold">Total</span>
+                <span className="text-xl font-extrabold tabular-nums">{formatCurrency(getEffectiveSaleTotal(selectedSale))}</span>
+              </div>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

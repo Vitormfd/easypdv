@@ -57,13 +57,15 @@ export function saveSale(s: Omit<Sale, 'id' | 'createdAt'> & { createdAt?: strin
   sales.push(sale);
   set('pdv_sales', sales);
   // Baixa de estoque
-  s.items.forEach(item => {
-    const products = getProducts();
-    const product = products.find(p => p.id === item.productId);
-    if (product) {
-      updateProduct(product.id, { stock: Math.max(0, product.stock - item.quantity) });
-    }
-  });
+  if (!s.isDebtPayment) {
+    s.items.forEach(item => {
+      const products = getProducts();
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+        updateProduct(product.id, { stock: Math.max(0, product.stock - item.quantity) });
+      }
+    });
+  }
   saveSaleToSupabase(sale).catch(err => console.error('[Sync] saveSale:', err));
   return sale;
 }
@@ -90,6 +92,22 @@ export function saveDebtPayment(dp: Omit<DebtPayment, 'id' | 'createdAt'>): Debt
   const payment: DebtPayment = { ...dp, id: genId(), createdAt: new Date().toISOString() };
   payments.push(payment);
   set('pdv_debt_payments', payments);
+
+  // Registra o recebimento na lista de vendas do dia para o caixa bater.
+  const customer = getCustomers().find(c => c.id === dp.customerId);
+  const paymentMethod = dp.paymentMethod || 'dinheiro';
+  saveSale({
+    items: [],
+    total: dp.amount,
+    payments: [{ method: paymentMethod, amount: dp.amount }],
+    paymentMethod,
+    customerId: dp.customerId,
+    customerName: customer?.name,
+    fiadoAmount: 0,
+    isDebtPayment: true,
+    createdAt: payment.createdAt,
+  });
+
   saveDebtPaymentToSupabase(payment).catch(err => console.error('[Sync] saveDebtPayment:', err));
   return payment;
 }
@@ -168,25 +186,48 @@ export function getEffectiveSaleTotal(sale: Sale): number {
   return latest.newTotal;
 }
 
+function getBaseFiadoAmount(sale: Sale): number {
+  if (sale.fiadoAmount != null) return sale.fiadoAmount;
+  if (sale.payments?.length) {
+    return sale.payments
+      .filter(p => p.method === 'fiado')
+      .reduce((acc, p) => acc + p.amount, 0);
+  }
+  if (sale.paymentMethod === 'fiado') return sale.total;
+  return 0;
+}
+
+function getEffectiveFiadoAmount(sale: Sale): number {
+  const baseFiado = getBaseFiadoAmount(sale);
+  const adjustments = getAdjustmentsForSale(sale.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  if (adjustments.length === 0) return baseFiado;
+
+  const latest = adjustments[0];
+  const adjustmentTotal = latest.payments.reduce((acc, p) => acc + p.amount, 0);
+  const adjustmentFiado = latest.payments
+    .filter(p => p.method === 'fiado')
+    .reduce((acc, p) => acc + p.amount, 0);
+
+  // Novo formato: payments representa o total final da venda ajustada.
+  if (adjustmentTotal > 0 && Math.abs(adjustmentTotal - latest.newTotal) < 0.01) {
+    return adjustmentFiado;
+  }
+
+  // Formato legado: payments representa apenas a diferença do ajuste.
+  const deltaFiado = latest.payments.reduce((acc, p) => {
+    if (p.method === 'fiado') return acc + p.amount;
+    return acc - p.amount;
+  }, 0);
+
+  return Math.max(0, +(baseFiado + deltaFiado).toFixed(2));
+}
+
 // ---- Utilitários de relatório ----
 export function getCustomerDebt(customerId: string): number {
-  const sales = getSales().filter(s => s.customerId === customerId);
-  // Sum fiado amounts, accounting for sale adjustments
-  const totalFiado = sales.reduce((acc, s) => {
-    // Check if this sale has been adjusted
-    const adjustments = getAdjustmentsForSale(s.id);
-    if (adjustments.length > 0) {
-      // Use the latest adjustment's fiado amount from payments
-      const latest = adjustments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-      const adjustedFiado = latest.payments
-        .filter(p => p.method === 'fiado')
-        .reduce((a, p) => a + p.amount, 0);
-      return acc + adjustedFiado;
-    }
-    if (s.fiadoAmount != null) return acc + s.fiadoAmount;
-    if (s.paymentMethod === 'fiado') return acc + s.total;
-    return acc;
-  }, 0);
+  const sales = getSales().filter(s => s.customerId === customerId && !s.isDebtPayment);
+  const totalFiado = sales.reduce((acc, s) => acc + getEffectiveFiadoAmount(s), 0);
   const payments = getDebtPayments().filter(p => p.customerId === customerId);
   const totalPayments = payments.reduce((acc, p) => acc + p.amount, 0);
   return Math.max(0, +(totalFiado - totalPayments).toFixed(2));
@@ -270,7 +311,7 @@ export function closeCashRegister(closingAmount: number): CashRegister {
     }
   });
 
-  const totalSales = sales.reduce((a, s) => a + s.total, 0);
+  const totalSales = sales.filter(s => !s.isDebtPayment).reduce((a, s) => a + s.total, 0);
   const expectedAmount = +(register.openingAmount + totalDinheiro).toFixed(2);
   const difference = +(closingAmount - expectedAmount).toFixed(2);
 
@@ -285,7 +326,7 @@ export function closeCashRegister(closingAmount: number): CashRegister {
     totalPix,
     totalCartao,
     totalFiado,
-    salesCount: sales.length,
+    salesCount: sales.filter(s => !s.isDebtPayment).length,
     status: 'closed',
   };
 
@@ -375,6 +416,14 @@ export function getOpenRegisterTotals() {
     }
   });
 
-  const totalSales = sales.reduce((a, s) => a + s.total, 0);
-  return { register, totalSales, totalDinheiro, totalPix, totalCartao, totalFiado, salesCount: sales.length };
+  const totalSales = sales.filter(s => !s.isDebtPayment).reduce((a, s) => a + s.total, 0);
+  return {
+    register,
+    totalSales,
+    totalDinheiro,
+    totalPix,
+    totalCartao,
+    totalFiado,
+    salesCount: sales.filter(s => !s.isDebtPayment).length,
+  };
 }

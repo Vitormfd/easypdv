@@ -27,6 +27,9 @@ export default function SaleEditDialog({ sale, onClose, onSaved }: Props) {
 
   const products = getProducts();
   const adjustments = getAdjustmentsForSale(sale.id);
+  const latestAdjustment = adjustments
+    .slice()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
   const filteredProducts = search.trim()
     ? products
@@ -41,6 +44,17 @@ export default function SaleEditDialog({ sale, onClose, onSaved }: Props) {
   const originalTotal = sale.total;
   const newTotal = items.reduce((a, i) => a + i.subtotal, 0);
   const difference = +(newTotal - originalTotal).toFixed(2);
+
+  const basePayments: PaymentEntry[] = sale.payments?.length
+    ? sale.payments
+    : [{ method: sale.paymentMethod, amount: sale.total }];
+  const hasFullAdjustedPayments = !!latestAdjustment &&
+    latestAdjustment.payments.length > 0 &&
+    Math.abs(latestAdjustment.payments.reduce((acc, p) => acc + p.amount, 0) - latestAdjustment.newTotal) < 0.01;
+  const effectivePayments = hasFullAdjustedPayments ? latestAdjustment!.payments : basePayments;
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>(
+    effectivePayments.reduce((a, b) => a.amount >= b.amount ? a : b).method
+  );
 
   const hasChanges = useMemo(() => {
     if (items.length !== currentItems.length) return true;
@@ -89,15 +103,8 @@ export default function SaleEditDialog({ sale, onClose, onSaved }: Props) {
       return;
     }
 
-    // Build payments array for the adjustment
-    const payments: PaymentEntry[] = [];
-    if (difference > 0) {
-      // Customer owes more - register as pending
-      payments.push({ method: 'fiado' as PaymentMethod, amount: difference });
-    } else if (difference < 0) {
-      // Refund to customer
-      payments.push({ method: 'dinheiro' as PaymentMethod, amount: Math.abs(difference) });
-    }
+    // Novo formato: grava o pagamento efetivo da venda após o ajuste.
+    const payments: PaymentEntry[] = [{ method: selectedPaymentMethod, amount: newTotal }];
 
     saveSaleAdjustment({
       saleId: sale.id,
@@ -250,15 +257,31 @@ export default function SaleEditDialog({ sale, onClose, onSaved }: Props) {
 
           {/* Original payments */}
           <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pagamento Original</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Forma de Pagamento</p>
             <div className="flex flex-wrap gap-2">
-              {(sale.payments?.length ? sale.payments : [{ method: sale.paymentMethod, amount: sale.total }]).map(p => (
-                <span key={p.method} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted text-sm">
-                  <span className="font-medium">{paymentMethodLabels[p.method]}</span>
-                  <span className="tabular-nums text-muted-foreground">{formatCurrency(p.amount)}</span>
-                </span>
+              {([
+                'dinheiro',
+                'pix',
+                'cartao_credito',
+                'cartao_debito',
+                'fiado',
+              ] as PaymentMethod[]).map(method => (
+                <button
+                  key={method}
+                  onClick={() => setSelectedPaymentMethod(method)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm transition-all ${
+                    selectedPaymentMethod === method
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  <span className="font-medium">{paymentMethodLabels[method]}</span>
+                </button>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground">
+              Valor final será registrado em <strong>{paymentMethodLabels[selectedPaymentMethod]}</strong>.
+            </p>
           </div>
         </div>
 
@@ -278,7 +301,9 @@ export default function SaleEditDialog({ sale, onClose, onSaved }: Props) {
             }`}>
               <span className="flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4" />
-                {difference > 0 ? 'Valor pendente (será registrado como fiado)' : 'Devolver ao cliente'}
+                {difference > 0
+                  ? (selectedPaymentMethod === 'fiado' ? 'Valor pendente em fiado' : 'Valor adicional registrado na forma escolhida')
+                  : 'Valor reduzido na venda'}
               </span>
               <span className={`font-bold tabular-nums ${difference > 0 ? 'text-destructive' : 'text-success'}`}>
                 {formatCurrency(Math.abs(difference))}

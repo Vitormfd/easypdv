@@ -54,6 +54,7 @@ export async function getSalesFromSupabase(): Promise<Sale[]> {
         customerId: sale.customer_id,
         customerName: sale.customer_name,
         fiadoAmount: sale.fiado_amount ? parseFloat(sale.fiado_amount) : undefined,
+        isDebtPayment: (items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0,
         createdAt: sale.created_at,
       })
     }
@@ -131,6 +132,7 @@ export async function saveSaleToSupabase(s: Omit<Sale, 'id' | 'createdAt'> & { c
       customerId: sale.customer_id,
       customerName: sale.customer_name,
       fiadoAmount: sale.fiado_amount ? parseFloat(sale.fiado_amount) : undefined,
+      isDebtPayment: s.isDebtPayment,
       createdAt: sale.created_at,
     }
   } catch (error) {
@@ -187,6 +189,7 @@ export async function getSalesByDateRangeFromSupabase(start: Date, end: Date): P
         customerId: sale.customer_id,
         customerName: sale.customer_name,
         fiadoAmount: sale.fiado_amount ? parseFloat(sale.fiado_amount) : undefined,
+        isDebtPayment: (items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0,
         createdAt: sale.created_at,
       })
     }
