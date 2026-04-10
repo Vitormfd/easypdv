@@ -55,7 +55,7 @@ export default function PDVPage() {
   const products = productsData;
   const customers = customersData;
 
-  // Refresh products/customers when sales change (e.g., stock updated)
+  // Refresh products/customers when sales change (e.g., stock updated) 1
   useEffect(() => { setProductsData(getProducts()); }, [salesRefreshKey]);
   useEffect(() => { setCustomersData(getCustomers()); }, [salesRefreshKey]);
   useEffect(() => {
