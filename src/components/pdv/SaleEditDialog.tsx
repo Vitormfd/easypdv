@@ -52,17 +52,21 @@ export default function SaleEditDialog({ sale, onClose, onSaved }: Props) {
     latestAdjustment.payments.length > 0 &&
     Math.abs(latestAdjustment.payments.reduce((acc, p) => acc + p.amount, 0) - latestAdjustment.newTotal) < 0.01;
   const effectivePayments = hasFullAdjustedPayments ? latestAdjustment!.payments : basePayments;
+  const currentPrimaryPaymentMethod = effectivePayments.reduce((a, b) => a.amount >= b.amount ? a : b).method;
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>(
-    effectivePayments.reduce((a, b) => a.amount >= b.amount ? a : b).method
+    currentPrimaryPaymentMethod
   );
 
   const hasChanges = useMemo(() => {
+    const paymentChanged = selectedPaymentMethod !== currentPrimaryPaymentMethod;
     if (items.length !== currentItems.length) return true;
-    return items.some(item => {
+    const itemsChanged = items.some(item => {
       const orig = currentItems.find(i => i.productId === item.productId);
       return !orig || orig.quantity !== item.quantity;
     });
-  }, [items, currentItems]);
+
+    return itemsChanged || paymentChanged;
+  }, [items, currentItems, selectedPaymentMethod, currentPrimaryPaymentMethod]);
 
   const updateQty = (productId: string, qty: number) => {
     if (qty <= 0) {
@@ -113,7 +117,13 @@ export default function SaleEditDialog({ sale, onClose, onSaved }: Props) {
       newTotal,
       difference,
       payments,
-      reason: difference > 0 ? 'Itens adicionados/ajustados' : difference < 0 ? 'Itens removidos/ajustados' : 'Quantidades ajustadas',
+      reason: difference > 0
+        ? 'Itens adicionados/ajustados'
+        : difference < 0
+          ? 'Itens removidos/ajustados'
+          : selectedPaymentMethod !== currentPrimaryPaymentMethod
+            ? 'Forma de pagamento alterada'
+            : 'Quantidades ajustadas',
     });
 
     toast.success('Ajuste registrado com sucesso!');
@@ -162,7 +172,14 @@ export default function SaleEditDialog({ sale, onClose, onSaved }: Props) {
                 .map(adj => (
                   <div key={adj.id} className="flex items-center justify-between text-sm p-2 bg-card rounded-lg">
                     <div>
-                      <p className="font-medium">{adj.reason}</p>
+                      <p className="font-medium flex items-center gap-1.5">
+                        {adj.reason}
+                        {adj.reason.toLowerCase().includes('forma de pagamento') && (
+                          <span className="text-[10px] bg-accent/15 text-accent px-1.5 py-0.5 rounded font-semibold">
+                            Pagamento alterado
+                          </span>
+                        )}
+                      </p>
                       <p className="text-xs text-muted-foreground">{formatDateTime(adj.createdAt)}</p>
                     </div>
                     <div className="text-right">

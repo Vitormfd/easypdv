@@ -182,7 +182,7 @@ async function syncCashRegistersInBackground() {
 async function syncDebtPaymentsInBackground() {
   try {
     const supabasePayments = await getDebtPaymentsFromSupabase()
-    syncLocalSnapshot('pdv_debt_payments', supabasePayments)
+    syncLocalSnapshot('pdv_debt_payments', supabasePayments, { preventShrink: true })
     console.debug(`[Sync] ${supabasePayments.length} pagamentos de dívida sincronizados`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar pagamentos de dívida:', error)

@@ -20,11 +20,12 @@ const paymentMethods: { method: PaymentMethod; label: string; icon: typeof Dolla
 ];
 
 export default function PDVPage() {
+  const getInitialHideRegisterValues = () => localStorage.getItem('pdv_hide_cash_values') === 'true';
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [salesRefreshKey, setSalesRefreshKey] = useState(0);
   const [registerRefreshKey, setRegisterRefreshKey] = useState(0);
-  const [hideRegisterValues, setHideRegisterValues] = useState(false);
+  const [hideRegisterValues, setHideRegisterValues] = useState(getInitialHideRegisterValues);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCustomerSelect, setShowCustomerSelect] = useState(false);
@@ -379,6 +380,10 @@ export default function PDVPage() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [quantityMode, weightMode, weightBuffer]);
+
+  useEffect(() => {
+    localStorage.setItem('pdv_hide_cash_values', hideRegisterValues ? 'true' : 'false');
+  }, [hideRegisterValues]);
 
   const handleQuickRegister = () => {
     if (!quickForm.name || quickForm.price <= 0) {
