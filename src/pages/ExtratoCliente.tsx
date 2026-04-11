@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, Filter, X, Search, Eye, EyeOff } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Customer, Sale } from '@/types/pdv';
-import { getCustomers, getSales, getDebtPayments, getSaleAdjustments, getCustomerDebt, getLatestSaleItems, getEffectiveSaleTotal } from '@/lib/store';
+import { getCustomers, getSales, getDebtPayments, getSaleAdjustments, getCustomerDebt, getLatestSaleItems, getEffectiveSalePayments, getEffectiveSaleTotal } from '@/lib/store';
 import { formatCurrency, formatDate, formatDateTime, paymentMethodLabels } from '@/lib/format';
 import PlanGate from '@/components/PlanGate';
 
@@ -328,7 +328,7 @@ function ExtratoContent() {
 
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pagamento</p>
-                {(selectedSale.payments?.length ? selectedSale.payments : [{ method: selectedSale.paymentMethod, amount: selectedSale.total }]).map((p, idx) => (
+                {getEffectiveSalePayments(selectedSale).map((p, idx) => (
                   <div key={`${p.method}-${idx}`} className="flex items-center justify-between py-1.5 text-sm">
                     <span>{paymentMethodLabels[p.method]}</span>
                     <span className="font-medium tabular-nums">{formatCurrency(p.amount)}</span>

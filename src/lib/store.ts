@@ -186,6 +186,29 @@ export function getEffectiveSaleTotal(sale: Sale): number {
   return latest.newTotal;
 }
 
+/** Get effective payments for a sale considering latest adjustment */
+export function getEffectiveSalePayments(sale: Sale): PaymentEntry[] {
+  const basePayments = sale.payments?.length
+    ? sale.payments
+    : [{ method: sale.paymentMethod, amount: sale.total }];
+
+  const adjustments = getAdjustmentsForSale(sale.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  if (adjustments.length === 0) return basePayments;
+
+  const latest = adjustments[0];
+  const adjustedTotal = latest.payments.reduce((acc, p) => acc + p.amount, 0);
+
+  // Formato novo: payments do ajuste representam o pagamento final da venda.
+  if (latest.payments.length > 0 && Math.abs(adjustedTotal - latest.newTotal) < 0.01) {
+    return latest.payments;
+  }
+
+  // Formato legado: fallback para pagamentos originais.
+  return basePayments;
+}
+
 function getBaseFiadoAmount(sale: Sale): number {
   if (sale.fiadoAmount != null) return sale.fiadoAmount;
   if (sale.payments?.length) {

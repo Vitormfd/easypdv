@@ -2,7 +2,7 @@ import { forwardRef } from 'react';
 import type { Sale, PaymentEntry } from '@/types/pdv';
 import { formatCurrency } from '@/lib/format';
 import { paymentMethodLabels } from '@/lib/format';
-import { getPrintConfig, getSystemName } from '@/lib/store';
+import { getPrintConfig, getSystemName, getEffectiveSalePayments, getEffectiveSaleTotal } from '@/lib/store';
 
 interface Props {
   sale: Sale;
@@ -15,6 +15,8 @@ const ReceiptPrint = forwardRef<HTMLDivElement, Props>(({ sale, marketName }, re
   const date = new Date(sale.createdAt);
   const dateStr = date.toLocaleDateString('pt-BR');
   const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const effectivePayments = getEffectiveSalePayments(sale);
+  const effectiveTotal = getEffectiveSaleTotal(sale);
 
   return (
     <div ref={ref} className="receipt-print" style={{ display: 'none' }}>
@@ -70,14 +72,14 @@ const ReceiptPrint = forwardRef<HTMLDivElement, Props>(({ sale, marketName }, re
 
       <div className="r-row r-total">
         <span>TOTAL</span>
-        <span>{formatCurrency(sale.total)}</span>
+        <span>{formatCurrency(effectiveTotal)}</span>
       </div>
 
       <div className="r-line" />
 
       {config.showPaymentDetails && (
         <div style={{ fontSize: '11px' }}>
-          {(sale.payments?.length ? sale.payments : [{ method: sale.paymentMethod, amount: sale.total }] as PaymentEntry[]).map((p, i) => (
+          {(effectivePayments.length ? effectivePayments : [{ method: sale.paymentMethod, amount: sale.total }] as PaymentEntry[]).map((p, i) => (
             <div key={i} className="r-row">
               <span>{paymentMethodLabels[p.method]}</span>
               <span>{formatCurrency(p.amount)}</span>

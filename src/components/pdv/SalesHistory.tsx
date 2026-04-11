@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Eye, X, Clock, Receipt, Pencil, Search, Filter, RotateCcw, Printer } from 'lucide-react';
 import type { Sale, PaymentMethod } from '@/types/pdv';
-import { getSales, getAdjustmentsForSale, getEffectiveSaleTotal, getOpenCashRegister } from '@/lib/store';
+import { getSales, getAdjustmentsForSale, getEffectiveSalePayments, getEffectiveSaleTotal, getOpenCashRegister } from '@/lib/store';
 import { formatCurrency, paymentMethodLabels } from '@/lib/format';
 import SaleEditDialog from './SaleEditDialog';
 import ReceiptPrint, { printReceipt } from './ReceiptPrint';
@@ -29,14 +29,12 @@ function paymentColor(method: PaymentMethod): string {
 }
 
 function getPrimaryMethod(sale: Sale): PaymentMethod {
-  if (sale.payments?.length) {
-    return sale.payments.reduce((a, b) => a.amount >= b.amount ? a : b).method;
-  }
-  return sale.paymentMethod;
+  const payments = getEffectiveSalePayments(sale);
+  return payments.reduce((a, b) => a.amount >= b.amount ? a : b).method;
 }
 
 function hasFiado(sale: Sale): boolean {
-  return sale.payments?.some(p => p.method === 'fiado') || sale.paymentMethod === 'fiado';
+  return getEffectiveSalePayments(sale).some(p => p.method === 'fiado');
 }
 
 function isDebtPaymentSale(sale: Sale): boolean {
@@ -96,12 +94,10 @@ export default function SalesHistory({ refreshKey }: Props) {
     if (filter === 'finalizadas') result = result.filter(s => !hasFiado(s));
     else if (filter === 'fiado') result = result.filter(s => hasFiado(s));
     else if (filter === 'cartao') result = result.filter(s => {
-      if (s.payments?.length) return s.payments.some(p => p.method === 'cartao_credito' || p.method === 'cartao_debito');
-      return s.paymentMethod === 'cartao_credito' || s.paymentMethod === 'cartao_debito';
+      return getEffectiveSalePayments(s).some(p => p.method === 'cartao_credito' || p.method === 'cartao_debito');
     });
     else if (filter !== 'todas') result = result.filter(s => {
-      if (s.payments?.length) return s.payments.some(p => p.method === filter);
-      return s.paymentMethod === filter;
+      return getEffectiveSalePayments(s).some(p => p.method === filter);
     });
 
     // Customer search
@@ -132,9 +128,9 @@ export default function SalesHistory({ refreshKey }: Props) {
     const totalSold = todaySales.reduce((a, s) => a + (isDebtPaymentSale(s) ? 0 : s.total), 0);
     const totalFiado = todaySales.reduce((a, s) => {
       if (isDebtPaymentSale(s)) return a;
-      if (s.fiadoAmount) return a + s.fiadoAmount;
-      if (s.paymentMethod === 'fiado') return a + s.total;
-      return a;
+      return a + getEffectiveSalePayments(s)
+        .filter(p => p.method === 'fiado')
+        .reduce((acc, p) => acc + p.amount, 0);
     }, 0);
     return { totalSold, count: todaySales.length, totalFiado };
   }, [todaySales]);
@@ -274,17 +270,11 @@ export default function SalesHistory({ refreshKey }: Props) {
                             Recebimento
                           </span>
                         )}
-                        {sale.payments?.length ? (
-                          sale.payments.map(p => (
-                            <span key={p.method} className={`inline-block px-2 py-0.5 rounded-md text-xs font-medium ${paymentColor(p.method)}`}>
-                              {paymentMethodLabels[p.method]}
-                            </span>
-                          ))
-                        ) : (
-                          <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-medium ${paymentColor(primary)}`}>
-                            {paymentMethodLabels[primary]}
+                        {getEffectiveSalePayments(sale).map((p, paymentIndex) => (
+                          <span key={`${p.method}-${paymentIndex}`} className={`inline-block px-2 py-0.5 rounded-md text-xs font-medium ${paymentColor(p.method)}`}>
+                            {paymentMethodLabels[p.method]}
                           </span>
-                        )}
+                        ))}
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
@@ -360,23 +350,14 @@ export default function SalesHistory({ refreshKey }: Props) {
               {/* Payments */}
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pagamento</p>
-                {selectedSale.payments?.length ? (
-                  selectedSale.payments.map(p => (
-                    <div key={p.method} className="flex items-center justify-between py-1.5 text-sm">
-                      <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${paymentColor(p.method)}`}>
-                        {paymentMethodLabels[p.method]}
-                      </span>
-                      <span className="font-medium tabular-nums">{formatCurrency(p.amount)}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="flex items-center justify-between py-1.5 text-sm">
-                    <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${paymentColor(selectedSale.paymentMethod)}`}>
-                      {paymentMethodLabels[selectedSale.paymentMethod]}
+                {getEffectiveSalePayments(selectedSale).map((p, paymentIndex) => (
+                  <div key={`${p.method}-${paymentIndex}`} className="flex items-center justify-between py-1.5 text-sm">
+                    <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${paymentColor(p.method)}`}>
+                      {paymentMethodLabels[p.method]}
                     </span>
-                    <span className="font-medium tabular-nums">{formatCurrency(selectedSale.total)}</span>
+                    <span className="font-medium tabular-nums">{formatCurrency(p.amount)}</span>
                   </div>
-                )}
+                ))}
               </div>
 
               {/* Total */}
