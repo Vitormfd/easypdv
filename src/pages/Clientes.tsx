@@ -11,6 +11,8 @@ import ImportCustomers from '@/components/ImportCustomers';
 import { exportCustomersToExcel } from '@/lib/exportExcel';
 
 export default function ClientesPage() {
+  const getInitialHideValues = () => localStorage.getItem('pdv_hide_customer_values') === 'true';
+  const getInitialHideCardValues = () => localStorage.getItem('pdv_hide_customer_card_values') === 'true';
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -32,8 +34,8 @@ export default function ClientesPage() {
   const [visibleCount, setVisibleCount] = useState(50);
   const [showImport, setShowImport] = useState(false);
   const [collectionExpanded, setCollectionExpanded] = useState(false);
-  const [hideValues, setHideValues] = useState(false);
-  const [hideCardValues, setHideCardValues] = useState(false);
+  const [hideValues, setHideValues] = useState(getInitialHideValues);
+  const [hideCardValues, setHideCardValues] = useState(getInitialHideCardValues);
   const mask = (val: string) => hideValues ? '••••' : val;
   const maskCard = (val: string) => hideCardValues ? '••••' : val;
 
@@ -56,6 +58,14 @@ export default function ClientesPage() {
     window.addEventListener('pdv:data-updated', handleDataUpdated as EventListener);
     return () => window.removeEventListener('pdv:data-updated', handleDataUpdated as EventListener);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('pdv_hide_customer_values', hideValues ? 'true' : 'false');
+  }, [hideValues]);
+
+  useEffect(() => {
+    localStorage.setItem('pdv_hide_customer_card_values', hideCardValues ? 'true' : 'false');
+  }, [hideCardValues]);
 
   const resetForm = () => {
     setFormData({ name: '', phone: '', address: '', cpf: '', notes: '', creditLimit: '', monthlyLimit: '', status: 'active' });
