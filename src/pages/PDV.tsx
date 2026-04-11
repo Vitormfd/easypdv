@@ -78,7 +78,7 @@ export default function PDVPage() {
     ? products.filter(p =>
         p.name.toLowerCase().includes(search.toLowerCase()) ||
         p.code.toLowerCase().includes(search.toLowerCase()) ||
-        (p.barcode && p.barcode.includes(search))
+        (p.barcode && p.barcode.trim().toLowerCase().includes(search.toLowerCase()))
       ).slice(0, 8)
     : [];
 
@@ -270,12 +270,25 @@ export default function PDVPage() {
     if (e.key === 'Enter' && search.trim()) {
       e.preventDefault();
       const query = search.trim();
-      const product = products.find(p => p.barcode === query) || products.find(p => p.code === query);
+      // Trim stored barcodes to avoid whitespace mismatches; case-insensitive code fallback
+      const product =
+        products.find(p => p.barcode?.trim() === query) ||
+        products.find(p => p.code.toLowerCase() === query.toLowerCase());
       if (product) {
         addToCartWithQty(product.id);
       } else {
-        setQuickForm({ name: '', price: 0, barcode: query, unit: 'un' as ProductUnit });
-        setShowQuickRegister(true);
+        // Fallback: if the search narrows down to exactly one product, add it
+        const matches = products.filter(p =>
+          p.name.toLowerCase().includes(query.toLowerCase()) ||
+          p.code.toLowerCase().includes(query.toLowerCase()) ||
+          (p.barcode && p.barcode.trim().includes(query))
+        );
+        if (matches.length === 1) {
+          addToCartWithQty(matches[0].id);
+        } else {
+          setQuickForm({ name: '', price: 0, barcode: query, unit: 'un' as ProductUnit });
+          setShowQuickRegister(true);
+        }
       }
       setSearch('');
     }
