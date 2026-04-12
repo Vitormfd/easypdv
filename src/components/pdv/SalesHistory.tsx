@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Eye, X, Clock, Receipt, Pencil, Search, Filter, RotateCcw, Printer } from 'lucide-react';
 import type { Sale, PaymentMethod } from '@/types/pdv';
-import { getSales, getAdjustmentsForSale, getEffectiveSalePayments, getEffectiveSaleTotal, getOpenCashRegister, saveSaleAdjustment } from '@/lib/store';
+import { getSales, getAdjustmentsForSale, getEffectiveSalePayments, getEffectiveSaleTotal, getOpenCashRegister, deleteSale } from '@/lib/store';
 import { formatCurrency, paymentMethodLabels } from '@/lib/format';
 import SaleEditDialog from './SaleEditDialog';
 import ReceiptPrint, { printReceipt } from './ReceiptPrint';
@@ -27,11 +27,6 @@ function paymentColor(method: PaymentMethod): string {
     case 'cartao_debito': return 'bg-muted text-foreground';
     default: return 'bg-muted text-muted-foreground';
   }
-}
-
-function getPrimaryMethod(sale: Sale): PaymentMethod {
-  const payments = getEffectiveSalePayments(sale);
-  return payments.reduce((a, b) => a.amount >= b.amount ? a : b).method;
 }
 
 function hasFiado(sale: Sale): boolean {
@@ -83,6 +78,7 @@ export default function SalesHistory({ refreshKey }: Props) {
     return allSales
       .filter(s => new Date(s.createdAt) >= start)
       .filter(s => !s.items.some(item => item.productId === 'import'))
+      .filter(s => getEffectiveSaleTotal(s) > 0.01)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,8 +106,8 @@ export default function SalesHistory({ refreshKey }: Props) {
     // Value range
     const min = parseFloat(minValue);
     const max = parseFloat(maxValue);
-    if (!isNaN(min) && min > 0) result = result.filter(s => s.total >= min);
-    if (!isNaN(max) && max > 0) result = result.filter(s => s.total <= max);
+    if (!isNaN(min) && min > 0) result = result.filter(s => getEffectiveSaleTotal(s) >= min);
+    if (!isNaN(max) && max > 0) result = result.filter(s => getEffectiveSaleTotal(s) <= max);
 
     return result;
   }, [todaySales, filter, customerSearch, minValue, maxValue]);
@@ -132,25 +128,24 @@ export default function SalesHistory({ refreshKey }: Props) {
       return;
     }
 
-    const confirmed = window.confirm('Cancelar esta venda? O estoque sera revertido e o valor ficara zerado no historico.');
+    const confirmed = window.confirm('Cancelar esta venda? O estoque sera devolvido e a venda sera removida do historico.');
     if (!confirmed) return;
 
-    saveSaleAdjustment({
-      saleId: sale.id,
-      items: [],
-      previousTotal: currentTotal,
-      newTotal: 0,
-      difference: -currentTotal,
-      payments: [],
-      reason: 'Venda cancelada',
-    });
+    const removed = deleteSale(sale.id);
+    if (!removed) {
+      toast.error('Nao foi possivel cancelar a venda.');
+      return;
+    }
 
+    if (selectedSale?.id === sale.id) {
+      setSelectedSale(null);
+    }
     setLocalRefresh(k => k + 1);
     toast.success('Venda cancelada com sucesso.');
   };
 
   const daySummary = useMemo(() => {
-    const totalSold = todaySales.reduce((a, s) => a + (isDebtPaymentSale(s) ? 0 : s.total), 0);
+    const totalSold = todaySales.reduce((a, s) => a + (isDebtPaymentSale(s) ? 0 : getEffectiveSaleTotal(s)), 0);
     const totalFiado = todaySales.reduce((a, s) => {
       if (isDebtPaymentSale(s)) return a;
       return a + getEffectiveSalePayments(s)
@@ -231,7 +226,7 @@ export default function SalesHistory({ refreshKey }: Props) {
 
         {hasActiveFilters && (
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span>Filtrado: <strong className="text-foreground">{filtered.length}</strong> vendas • {formatCurrency(filtered.reduce((a, s) => a + s.total, 0))}</span>
+            <span>Filtrado: <strong className="text-foreground">{filtered.length}</strong> vendas • {formatCurrency(filtered.reduce((a, s) => a + getEffectiveSaleTotal(s), 0))}</span>
           </div>
         )}
       </div>
@@ -256,7 +251,6 @@ export default function SalesHistory({ refreshKey }: Props) {
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.map((sale, idx) => {
-                const primary = getPrimaryMethod(sale);
                 const time = new Date(sale.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
                 const adjustments = getAdjustmentsForSale(sale.id);
                 const isAdjusted = adjustments.length > 0;

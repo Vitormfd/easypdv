@@ -62,11 +62,19 @@ export default function PDVPage() {
   useEffect(() => {
     const handleDataUpdated = (event: Event) => {
       const customEvent = event as CustomEvent<{ key?: string }>;
-      if (customEvent.detail?.key === 'pdv_products') {
+      const key = customEvent.detail?.key;
+
+      if (key === 'pdv_products') {
         setProductsData(getProducts());
       }
-      if (customEvent.detail?.key === 'pdv_customers') {
+      if (key === 'pdv_customers') {
         setCustomersData(getCustomers());
+      }
+      if (key === 'pdv_sales' || key === 'pdv_sale_adjustments' || key === 'pdv_cash_registers') {
+        setProductsData(getProducts());
+        setCustomersData(getCustomers());
+        setSalesRefreshKey(k => k + 1);
+        setRegisterRefreshKey(k => k + 1);
       }
     };
 

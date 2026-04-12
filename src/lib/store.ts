@@ -27,6 +27,11 @@ function set<T>(key: string, data: T[]) {
   localStorage.setItem(key, JSON.stringify(data));
 }
 
+function emitDataUpdated(key: string) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('pdv:data-updated', { detail: { key } }));
+}
+
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -68,6 +73,37 @@ export function saveSale(s: Omit<Sale, 'id' | 'createdAt'> & { createdAt?: strin
   }
   saveSaleToSupabase(sale).catch(err => console.error('[Sync] saveSale:', err));
   return sale;
+}
+
+export function deleteSale(saleId: string): boolean {
+  const sales = getSales();
+  const sale = sales.find(s => s.id === saleId);
+  if (!sale) return false;
+
+  // Reverte estoque baseado na versão efetiva mais recente da venda.
+  if (!sale.isDebtPayment) {
+    const effectiveItems = getLatestSaleItems(sale);
+    effectiveItems.forEach(item => {
+      const product = getProducts().find(p => p.id === item.productId);
+      if (product) {
+        updateProduct(product.id, { stock: product.stock + item.quantity });
+      }
+    });
+  }
+
+  set('pdv_sales', sales.filter(s => s.id !== saleId));
+  emitDataUpdated('pdv_sales');
+
+  const adjustments = getSaleAdjustments();
+  const hasAdjustments = adjustments.some(a => a.saleId === saleId);
+  if (hasAdjustments) {
+    set('pdv_sale_adjustments', adjustments.filter(a => a.saleId !== saleId));
+    emitDataUpdated('pdv_sale_adjustments');
+  }
+
+  emitDataUpdated('pdv_products');
+  emitDataUpdated('pdv_cash_registers');
+  return true;
 }
 
 // ---- Clientes ----
@@ -314,27 +350,19 @@ export function closeCashRegister(closingAmount: number): CashRegister {
   const sales = getSales().filter(s => {
     const d = new Date(s.createdAt);
     return d >= new Date(register.openedAt);
-  });
+  }).filter(s => getEffectiveSaleTotal(s) > 0.01);
 
   let totalDinheiro = 0, totalPix = 0, totalCartao = 0, totalFiado = 0;
   sales.forEach(s => {
-    if (s.payments?.length) {
-      s.payments.forEach(p => {
-        if (p.method === 'dinheiro') totalDinheiro += p.amount;
-        else if (p.method === 'pix') totalPix += p.amount;
-        else if (p.method === 'cartao_credito' || p.method === 'cartao_debito') totalCartao += p.amount;
-        else if (p.method === 'fiado') totalFiado += p.amount;
-      });
-    } else {
-      const amt = s.total;
-      if (s.paymentMethod === 'dinheiro') totalDinheiro += amt;
-      else if (s.paymentMethod === 'pix') totalPix += amt;
-      else if (s.paymentMethod === 'cartao_credito' || s.paymentMethod === 'cartao_debito') totalCartao += amt;
-      else if (s.paymentMethod === 'fiado') totalFiado += amt;
-    }
+    getEffectiveSalePayments(s).forEach(p => {
+      if (p.method === 'dinheiro') totalDinheiro += p.amount;
+      else if (p.method === 'pix') totalPix += p.amount;
+      else if (p.method === 'cartao_credito' || p.method === 'cartao_debito') totalCartao += p.amount;
+      else if (p.method === 'fiado') totalFiado += p.amount;
+    });
   });
 
-  const totalSales = sales.filter(s => !s.isDebtPayment).reduce((a, s) => a + s.total, 0);
+  const totalSales = sales.filter(s => !s.isDebtPayment).reduce((a, s) => a + getEffectiveSaleTotal(s), 0);
   const expectedAmount = +(register.openingAmount + totalDinheiro).toFixed(2);
   const difference = +(closingAmount - expectedAmount).toFixed(2);
 
@@ -421,25 +449,20 @@ export function getOpenRegisterTotals() {
   const register = getOpenCashRegister();
   if (!register) return null;
 
-  const sales = getSales().filter(s => new Date(s.createdAt) >= new Date(register.openedAt));
+  const sales = getSales()
+    .filter(s => new Date(s.createdAt) >= new Date(register.openedAt))
+    .filter(s => getEffectiveSaleTotal(s) > 0.01);
   let totalDinheiro = 0, totalPix = 0, totalCartao = 0, totalFiado = 0;
   sales.forEach(s => {
-    if (s.payments?.length) {
-      s.payments.forEach(p => {
-        if (p.method === 'dinheiro') totalDinheiro += p.amount;
-        else if (p.method === 'pix') totalPix += p.amount;
-        else if (p.method === 'cartao_credito' || p.method === 'cartao_debito') totalCartao += p.amount;
-        else if (p.method === 'fiado') totalFiado += p.amount;
-      });
-    } else {
-      if (s.paymentMethod === 'dinheiro') totalDinheiro += s.total;
-      else if (s.paymentMethod === 'pix') totalPix += s.total;
-      else if (s.paymentMethod === 'cartao_credito' || s.paymentMethod === 'cartao_debito') totalCartao += s.total;
-      else if (s.paymentMethod === 'fiado') totalFiado += s.total;
-    }
+    getEffectiveSalePayments(s).forEach(p => {
+      if (p.method === 'dinheiro') totalDinheiro += p.amount;
+      else if (p.method === 'pix') totalPix += p.amount;
+      else if (p.method === 'cartao_credito' || p.method === 'cartao_debito') totalCartao += p.amount;
+      else if (p.method === 'fiado') totalFiado += p.amount;
+    });
   });
 
-  const totalSales = sales.filter(s => !s.isDebtPayment).reduce((a, s) => a + s.total, 0);
+  const totalSales = sales.filter(s => !s.isDebtPayment).reduce((a, s) => a + getEffectiveSaleTotal(s), 0);
   return {
     register,
     totalSales,
