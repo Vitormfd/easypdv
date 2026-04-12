@@ -265,31 +265,6 @@ export default function PDVPage() {
     }, 2000);
   };
 
-  const cancelSale = () => {
-    if (cart.length === 0) return;
-
-    const confirmed = window.confirm('Cancelar a venda atual? Todos os itens e pagamentos serão removidos.');
-    if (!confirmed) return;
-
-    setCart([]);
-    setPayments([]);
-    setSelectedCustomer(null);
-    setShowCustomerSelect(false);
-    setCreditWarning(null);
-    setCashTendered('');
-    setCustomerSearch('');
-    setSearch('');
-    setNextQuantity(1);
-    setQuantityMode(false);
-    setQuantityBuffer('');
-    setNextWeight(0);
-    setWeightMode(false);
-    setWeightBuffer('');
-    setWeightModalProduct(null);
-    setWeightModalInput('');
-    toast.success('Venda cancelada.');
-    searchRef.current?.focus();
-  };
 
   // Barcode scanner detection: rapid input ending with Enter
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -829,13 +804,6 @@ export default function PDVPage() {
                 Finalizar Venda (F4)
               </button>
 
-              <button
-                onClick={cancelSale}
-                disabled={cart.length === 0}
-                className="w-full rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive transition-all hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Cancelar Venda
-              </button>
             </div>
           </div>
         </div>

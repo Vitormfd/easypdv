@@ -1,4 +1,4 @@
-import type { Product, Sale, Customer, DebtPayment, StockEntry, SaleAdjustment, CashRegister } from '@/types/pdv';
+import type { Product, Sale, Customer, DebtPayment, StockEntry, SaleAdjustment, CashRegister, PaymentEntry } from '@/types/pdv';
 import { initializeSync } from './supabase/sync';
 import { saveProductToSupabase } from './supabase/services/products';
 import { saveSaleToSupabase } from './supabase/services/sales';
@@ -201,7 +201,7 @@ export function getEffectiveSalePayments(sale: Sale): PaymentEntry[] {
   const adjustedTotal = latest.payments.reduce((acc, p) => acc + p.amount, 0);
 
   // Formato novo: payments do ajuste representam o pagamento final da venda.
-  if (latest.payments.length > 0 && Math.abs(adjustedTotal - latest.newTotal) < 0.01) {
+  if (Math.abs(adjustedTotal - latest.newTotal) < 0.01) {
     return latest.payments;
   }
 
@@ -234,7 +234,7 @@ function getEffectiveFiadoAmount(sale: Sale): number {
     .reduce((acc, p) => acc + p.amount, 0);
 
   // Novo formato: payments representa o total final da venda ajustada.
-  if (adjustmentTotal > 0 && Math.abs(adjustmentTotal - latest.newTotal) < 0.01) {
+  if (Math.abs(adjustmentTotal - latest.newTotal) < 0.01) {
     return adjustmentFiado;
   }
 

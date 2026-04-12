@@ -1,10 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Eye, X, Clock, Receipt, Pencil, Search, Filter, RotateCcw, Printer } from 'lucide-react';
 import type { Sale, PaymentMethod } from '@/types/pdv';
-import { getSales, getAdjustmentsForSale, getEffectiveSalePayments, getEffectiveSaleTotal, getOpenCashRegister } from '@/lib/store';
+import { getSales, getAdjustmentsForSale, getEffectiveSalePayments, getEffectiveSaleTotal, getOpenCashRegister, saveSaleAdjustment } from '@/lib/store';
 import { formatCurrency, paymentMethodLabels } from '@/lib/format';
 import SaleEditDialog from './SaleEditDialog';
 import ReceiptPrint, { printReceipt } from './ReceiptPrint';
+import { toast } from 'sonner';
 
 type PayFilter = 'todas' | 'finalizadas' | 'fiado' | 'pix' | 'dinheiro' | 'cartao';
 
@@ -124,6 +125,30 @@ export default function SalesHistory({ refreshKey }: Props) {
     setMaxValue('');
   };
 
+  const handleCancelSale = (sale: Sale) => {
+    const currentTotal = getEffectiveSaleTotal(sale);
+    if (currentTotal <= 0.01) {
+      toast.info('Essa venda ja esta cancelada.');
+      return;
+    }
+
+    const confirmed = window.confirm('Cancelar esta venda? O estoque sera revertido e o valor ficara zerado no historico.');
+    if (!confirmed) return;
+
+    saveSaleAdjustment({
+      saleId: sale.id,
+      items: [],
+      previousTotal: currentTotal,
+      newTotal: 0,
+      difference: -currentTotal,
+      payments: [],
+      reason: 'Venda cancelada',
+    });
+
+    setLocalRefresh(k => k + 1);
+    toast.success('Venda cancelada com sucesso.');
+  };
+
   const daySummary = useMemo(() => {
     const totalSold = todaySales.reduce((a, s) => a + (isDebtPaymentSale(s) ? 0 : s.total), 0);
     const totalFiado = todaySales.reduce((a, s) => {
@@ -237,6 +262,7 @@ export default function SalesHistory({ refreshKey }: Props) {
                 const isAdjusted = adjustments.length > 0;
                 const isDebtPayment = isDebtPaymentSale(sale);
                 const effectiveTotal = isAdjusted ? getEffectiveSaleTotal(sale) : sale.total;
+                const isCanceled = effectiveTotal <= 0.01;
                 return (
                   <tr key={sale.id} className="hover:bg-muted/30 transition-colors">
                     <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
@@ -246,6 +272,9 @@ export default function SalesHistory({ refreshKey }: Props) {
                       )}
                       {isAdjusted && (
                         <span className="ml-1 text-[10px] bg-warning/15 text-warning px-1.5 py-0.5 rounded font-semibold">Ajustada</span>
+                      )}
+                      {isCanceled && (
+                        <span className="ml-1 text-[10px] bg-destructive/15 text-destructive px-1.5 py-0.5 rounded font-semibold">Cancelada</span>
                       )}
                     </td>
                     <td className="px-3 py-2.5 tabular-nums">
@@ -288,7 +317,7 @@ export default function SalesHistory({ refreshKey }: Props) {
                         </button>
                         <button
                           onClick={() => setEditingSale(sale)}
-                          disabled={isDebtPayment}
+                          disabled={isDebtPayment || isCanceled}
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all active:scale-95"
                           title="Editar / Ajustar"
                         >
@@ -300,6 +329,14 @@ export default function SalesHistory({ refreshKey }: Props) {
                           title="Reimprimir"
                         >
                           <Printer className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleCancelSale(sale)}
+                          disabled={isDebtPayment || isCanceled}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Cancelar venda"
+                        >
+                          <X className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
