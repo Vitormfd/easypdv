@@ -1,6 +1,6 @@
 import type { Product, Sale, Customer, DebtPayment, StockEntry, SaleAdjustment, CashRegister, PaymentEntry } from '@/types/pdv';
 import { initializeSync } from './supabase/sync';
-import { saveProductToSupabase } from './supabase/services/products';
+import { saveProductToSupabase, updateProductInSupabase, deleteProductFromSupabase } from './supabase/services/products';
 import { saveSaleToSupabase } from './supabase/services/sales';
 import { saveCustomerToSupabase } from './supabase/services/customers';
 import { saveDebtPaymentToSupabase } from './supabase/services/debt-payments';
@@ -36,22 +36,86 @@ function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+const PRODUCT_ACTIVE_MAP_KEY = 'pdv_product_active_map';
+
+function getProductActiveMap(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(PRODUCT_ACTIVE_MAP_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function setProductActiveState(productId: string, isActive: boolean) {
+  const map = getProductActiveMap();
+  map[productId] = isActive;
+  localStorage.setItem(PRODUCT_ACTIVE_MAP_KEY, JSON.stringify(map));
+}
+
+function removeProductActiveState(productId: string) {
+  const map = getProductActiveMap();
+  delete map[productId];
+  localStorage.setItem(PRODUCT_ACTIVE_MAP_KEY, JSON.stringify(map));
+}
+
 // ---- Produtos ----
-export function getProducts(): Product[] { return get<Product>('pdv_products'); }
+export function getProducts(): Product[] {
+  const products = get<Product>('pdv_products');
+  const activeMap = getProductActiveMap();
+
+  return products.map((p) => {
+    const fromMap = activeMap[p.id];
+    const derivedIsActive = fromMap ?? p.isActive ?? (p.status ? p.status !== 'inactive' : true);
+    return {
+      ...p,
+      isActive: derivedIsActive,
+      status: derivedIsActive ? 'active' : 'inactive',
+    };
+  });
+}
 export function saveProduct(p: Omit<Product, 'id' | 'createdAt'>): Product {
   const products = getProducts();
-  const product: Product = { ...p, id: genId(), createdAt: new Date().toISOString() };
+  const isActive = p.isActive ?? (p.status ? p.status !== 'inactive' : true);
+  const product: Product = {
+    ...p,
+    isActive,
+    status: isActive ? 'active' : 'inactive',
+    id: genId(),
+    createdAt: new Date().toISOString()
+  };
   products.push(product);
   set('pdv_products', products);
+  setProductActiveState(product.id, isActive);
+  emitDataUpdated('pdv_products');
   saveProductToSupabase(product).catch(err => console.error('[Sync] saveProduct:', err));
   return product;
 }
 export function updateProduct(id: string, updates: Partial<Product>) {
-  const products = getProducts().map(p => p.id === id ? { ...p, ...updates } : p);
+  const products = getProducts().map(p => {
+    if (p.id !== id) return p;
+    const merged = { ...p, ...updates };
+    const isActive = updates.isActive ?? (updates.status ? updates.status !== 'inactive' : (merged.isActive ?? true));
+    return {
+      ...merged,
+      isActive,
+      status: isActive ? 'active' : 'inactive',
+    };
+  });
   set('pdv_products', products);
+  const updated = products.find(p => p.id === id);
+  if (updated) {
+    setProductActiveState(id, updated.isActive !== false);
+  }
+  emitDataUpdated('pdv_products');
+  updateProductInSupabase(id, updates).catch(err => console.error('[Sync] updateProduct:', err));
 }
 export function deleteProduct(id: string) {
   set('pdv_products', getProducts().filter(p => p.id !== id));
+  removeProductActiveState(id);
+  emitDataUpdated('pdv_products');
+  deleteProductFromSupabase(id).catch(err => console.error('[Sync] deleteProduct:', err));
 }
 
 // ---- Vendas ----
@@ -107,7 +171,11 @@ export function deleteSale(saleId: string): boolean {
 }
 
 // ---- Clientes ----
-export function getCustomers(): Customer[] { return get<Customer>('pdv_customers'); }
+export function getCustomers(): Customer[] {
+  return get<Customer>('pdv_customers')
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
+}
 export function saveCustomer(c: Omit<Customer, 'id' | 'createdAt'>): Customer {
   const customers = getCustomers();
   const customer: Customer = { ...c, id: genId(), createdAt: new Date().toISOString() };

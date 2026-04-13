@@ -30,6 +30,14 @@ export async function getProductsFromSupabase(): Promise<Product[]> {
       stock: parseFloat(p.stock),
       unit: p.unit as 'un' | 'kg' | 'lt',
       minStock: parseFloat(p.min_stock),
+      isActive: typeof (p as any).is_active === 'boolean'
+        ? (p as any).is_active
+        : (typeof (p as any).status === 'string'
+            ? (p as any).status !== 'inactive'
+            : true),
+      status: typeof (p as any).status === 'string'
+        ? ((p as any).status === 'inactive' ? 'inactive' : 'active')
+        : undefined,
       expiryDate: p.expiry_date,
       createdAt: p.created_at,
     }))
@@ -61,6 +69,7 @@ export async function saveProductToSupabase(p: Omit<Product, 'id' | 'createdAt'>
         stock: p.stock,
         unit: p.unit,
         min_stock: p.minStock,
+        is_active: p.isActive !== false,
         expiry_date: p.expiryDate || null,
       })
       .select()
@@ -78,6 +87,14 @@ export async function saveProductToSupabase(p: Omit<Product, 'id' | 'createdAt'>
       stock: parseFloat(data.stock),
       unit: data.unit,
       minStock: parseFloat(data.min_stock),
+      isActive: typeof (data as any).is_active === 'boolean'
+        ? (data as any).is_active
+        : (typeof (data as any).status === 'string'
+            ? (data as any).status !== 'inactive'
+            : true),
+      status: typeof (data as any).status === 'string'
+        ? ((data as any).status === 'inactive' ? 'inactive' : 'active')
+        : undefined,
       expiryDate: data.expiry_date,
       createdAt: data.created_at,
     }
@@ -99,11 +116,14 @@ export async function updateProductInSupabase(id: string, updates: Partial<Produ
 
     const updateData: any = {}
     if (updates.name) updateData.name = updates.name
+    if (updates.code !== undefined) updateData.code = updates.code
+    if (updates.barcode !== undefined) updateData.barcode = updates.barcode || null
     if (updates.price !== undefined) updateData.price = updates.price
     if (updates.cost !== undefined) updateData.cost = updates.cost
     if (updates.stock !== undefined) updateData.stock = updates.stock
     if (updates.unit) updateData.unit = updates.unit
     if (updates.minStock !== undefined) updateData.min_stock = updates.minStock
+    if (updates.isActive !== undefined) updateData.is_active = updates.isActive
     if (updates.expiryDate !== undefined) updateData.expiry_date = updates.expiryDate
 
     const { error } = await supabase

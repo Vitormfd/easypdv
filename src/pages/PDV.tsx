@@ -53,7 +53,7 @@ export default function PDVPage() {
 
   const [productsData, setProductsData] = useState(() => getProducts());
   const [customersData, setCustomersData] = useState(() => getCustomers());
-  const products = productsData;
+  const products = useMemo(() => productsData.filter(p => p.isActive !== false), [productsData]);
   const customers = customersData;
 
   // Refresh products/customers when sales change (e.g., stock updated) 1
@@ -102,6 +102,10 @@ export default function PDVPage() {
   const addToCartWithQty = useCallback((productId: string, overrideWeight?: number) => {
     const product = products.find(p => p.id === productId);
     if (!product) return;
+    if (product.isActive === false) {
+      toast.error('Produto inativo. Reative no estoque para vender.');
+      return;
+    }
 
     // For kg products: use overrideWeight, nextWeight (from = shortcut), or prompt modal
     if (product.unit === 'kg') {
@@ -215,6 +219,17 @@ export default function PDVPage() {
 
   const finalizeSale = () => {
     if (cart.length === 0 || remaining > 0.01) return;
+
+    const currentProducts = getProducts();
+    const hasInactiveInCart = cart.some(item => {
+      const latestProduct = currentProducts.find(p => p.id === item.product.id);
+      return latestProduct?.isActive === false;
+    });
+    if (hasInactiveInCart) {
+      toast.error('Ha produto inativo no carrinho. Remova-o para finalizar a venda.');
+      return;
+    }
+
     if (hasFiado && !selectedCustomer) {
       toast.error('Selecione um cliente para a parte fiado');
       return;

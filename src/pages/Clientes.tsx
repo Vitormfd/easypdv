@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Phone, X, DollarSign, MessageCircle, Send, AlertTriangle, Clock, Filter, ChevronDown, ChevronUp, Edit2, Ban, CheckCircle, User, MapPin, FileText, Upload, Smartphone, CreditCard, Wallet, Search, Download, Eye, EyeOff } from 'lucide-react';
 import type { Customer, CustomerStatus, PaymentMethod } from '@/types/pdv';
-import { getCustomers, saveCustomer, updateCustomer, getSales, getDebtPayments, saveDebtPayment, getCustomerDebt } from '@/lib/store';
+import { getCustomers, saveCustomer, updateCustomer, getSales, getDebtPayments, saveDebtPayment, getCustomerDebt, saveSale } from '@/lib/store';
 import { formatCurrency, formatDate, paymentMethodLabels } from '@/lib/format';
 import { generateDebtMessage, openWhatsApp, getDaysSinceLastPurchase, getCollectionThresholds, setCollectionThresholds } from '@/lib/whatsapp';
 import { getCreditStatusColor, getMonthlyFiadoTotal } from '@/lib/credit';
@@ -22,6 +22,7 @@ export default function ClientesPage() {
   });
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
+  const [manualDebtAmount, setManualDebtAmount] = useState(0);
   const [debtPaymentMethod, setDebtPaymentMethod] = useState<PaymentMethod>('dinheiro');
   const [showWhatsApp, setShowWhatsApp] = useState(false);
   const [whatsAppMessage, setWhatsAppMessage] = useState('');
@@ -139,6 +140,30 @@ export default function ClientesPage() {
     reload();
   };
 
+  const handleAddDebt = () => {
+    if (!selectedCustomer || manualDebtAmount <= 0) return;
+
+    saveSale({
+      items: [{
+        productId: 'manual_debt',
+        productName: 'Debito manual',
+        quantity: 1,
+        unitPrice: manualDebtAmount,
+        subtotal: manualDebtAmount,
+      }],
+      total: manualDebtAmount,
+      payments: [{ method: 'fiado', amount: manualDebtAmount }],
+      paymentMethod: 'fiado',
+      customerId: selectedCustomer.id,
+      customerName: selectedCustomer.name,
+      fiadoAmount: manualDebtAmount,
+    });
+
+    toast.success(`Debito de ${formatCurrency(manualDebtAmount)} adicionado para ${selectedCustomer.name}`);
+    setManualDebtAmount(0);
+    reload();
+  };
+
   const handleOpenWhatsApp = (customer: Customer) => {
     if (!canAccess('whatsapp')) {
       toast.error('Disponível apenas no plano Completo ou superior');
@@ -225,7 +250,7 @@ export default function ClientesPage() {
         c.cpf?.toLowerCase().includes(q)
       );
     }
-    return list;
+    return list.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
   }, [filter, customers, debtors, recommendedCustomers, blockedCustomers, searchQuery]);
 
   const totalDebt = debtors.reduce((acc, c) => acc + c.debt, 0);
@@ -653,6 +678,25 @@ export default function ClientesPage() {
                 </div>
               );
             })()}
+
+            {/* Payment + WhatsApp */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Adicionar débito</p>
+              <div className="flex gap-2">
+                <input
+                  className="input-pdv flex-1"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={manualDebtAmount || ''}
+                  onChange={e => setManualDebtAmount(parseFloat(e.target.value) || 0)}
+                  placeholder="Valor do débito"
+                />
+                <button onClick={handleAddDebt} disabled={manualDebtAmount <= 0} className="btn-pdv-primary !px-4">
+                  Adicionar
+                </button>
+              </div>
+            </div>
 
             {/* Payment + WhatsApp */}
             {getCustomerDebt(selectedCustomer.id) > 0 && (

@@ -13,6 +13,8 @@ export interface Product {
   stock: number;
   unit: ProductUnit;
   minStock: number;
+  isActive?: boolean;
+  status?: 'active' | 'inactive';
   expiryDate?: string;
   createdAt: string;
 }

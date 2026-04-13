@@ -142,8 +142,24 @@ export async function syncWithSupabase() {
 async function syncProductsInBackground() {
   try {
     const supabaseProducts = await getProductsFromSupabase()
-    syncLocalSnapshot('pdv_products', supabaseProducts, { preventShrink: true })
-    console.debug(`[Sync] ${supabaseProducts.length} produtos sincronizados`)
+    const localProductsRaw = localStorage.getItem('pdv_products')
+    const localProducts = localProductsRaw ? JSON.parse(localProductsRaw) : []
+    const localActiveById = new Map(
+      (Array.isArray(localProducts) ? localProducts : []).map((p: any) => [p?.id, p?.isActive])
+    )
+
+    const mergedProducts = supabaseProducts.map((p: any) => {
+      if (typeof p.isActive !== 'boolean') {
+        const localIsActive = localActiveById.get(p.id)
+        if (typeof localIsActive === 'boolean') {
+          return { ...p, isActive: localIsActive, status: localIsActive ? 'active' : 'inactive' }
+        }
+      }
+      return p
+    })
+
+    syncLocalSnapshot('pdv_products', mergedProducts, { preventShrink: true })
+    console.debug(`[Sync] ${mergedProducts.length} produtos sincronizados`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar produtos:', error)
   }

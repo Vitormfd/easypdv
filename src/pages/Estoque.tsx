@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, AlertTriangle, Edit2, Trash2, PackagePlus, X, Upload, Download } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Edit2, Trash2, PackagePlus, X, Upload, Download, ToggleLeft, ToggleRight } from 'lucide-react';
 import type { Product, ProductUnit } from '@/types/pdv';
 import ImportProducts from '@/components/ImportProducts';
 import { getProducts, saveProduct, updateProduct, deleteProduct, saveStockEntry } from '@/lib/store';
@@ -38,10 +38,11 @@ export default function EstoquePage() {
   const [visibleCount, setVisibleCount] = useState(50);
 
   const filtered = useMemo(() => products.filter(p => {
+    const isActive = p.isActive !== false;
     const matchSearch = !search.trim() || p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.code.toLowerCase().includes(search.toLowerCase()) ||
       (p.barcode && p.barcode.includes(search));
-    const matchStock = stockFilter === 'all' || (stockFilter === 'low' ? p.stock <= p.minStock : p.stock > p.minStock);
+    const matchStock = stockFilter === 'all' || (stockFilter === 'low' ? isActive && p.stock <= p.minStock : isActive && p.stock > p.minStock);
     const matchUnit = unitFilter === 'all' || p.unit === unitFilter;
     return matchSearch && matchStock && matchUnit;
   }), [products, search, stockFilter, unitFilter]);
@@ -83,6 +84,13 @@ export default function EstoquePage() {
     }
   };
 
+  const handleToggleProductStatus = (p: Product) => {
+    const nextIsActive = !(p.isActive !== false);
+    updateProduct(p.id, { isActive: nextIsActive, status: nextIsActive ? 'active' : 'inactive' });
+    toast.success(nextIsActive ? 'Produto reativado' : 'Produto inativado');
+    reload();
+  };
+
   const handleStockEntry = () => {
     if (!stockEntryProduct || stockEntryQty <= 0) return;
     saveStockEntry({ productId: stockEntryProduct.id, quantity: stockEntryQty });
@@ -92,7 +100,7 @@ export default function EstoquePage() {
     reload();
   };
 
-  const lowStockCount = products.filter(p => p.stock <= p.minStock).length;
+  const lowStockCount = products.filter(p => p.isActive !== false && p.stock <= p.minStock).length;
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -159,9 +167,14 @@ export default function EstoquePage() {
             </thead>
             <tbody className="divide-y divide-border">
               {visibleProducts.map(p => (
-                <tr key={p.id} className={`hover:bg-muted/30 transition-colors ${p.stock <= p.minStock ? 'bg-destructive/5' : ''}`}>
+                <tr key={p.id} className={`hover:bg-muted/30 transition-colors ${p.isActive === false ? 'opacity-60 bg-muted/20' : p.stock <= p.minStock ? 'bg-destructive/5' : ''}`}>
                   <td className="px-4 py-3">
-                    <p className="font-medium">{p.name}</p>
+                    <p className="font-medium flex items-center gap-2">
+                      {p.name}
+                      {p.isActive === false && (
+                        <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">Inativo</span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted-foreground sm:hidden">#{p.code}</p>
                     {p.barcode && <p className="text-xs text-muted-foreground">⊟ {p.barcode}</p>}
                   </td>
@@ -181,6 +194,13 @@ export default function EstoquePage() {
                       </button>
                       <button onClick={() => handleEdit(p)} className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted transition-all" title="Editar">
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleToggleProductStatus(p)}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${p.isActive === false ? 'text-success hover:bg-success/10' : 'text-warning hover:bg-warning/10'}`}
+                        title={p.isActive === false ? 'Reativar produto' : 'Inativar produto'}
+                      >
+                        {p.isActive === false ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
                       </button>
                       <button onClick={() => handleDelete(p.id)} className="w-8 h-8 rounded-lg flex items-center justify-center text-destructive hover:bg-destructive/10 transition-all" title="Remover">
                         <Trash2 className="w-4 h-4" />
