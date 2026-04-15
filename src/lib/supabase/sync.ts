@@ -56,6 +56,18 @@ const SYNC_INTERVAL = 5000 // 5 segundos
 const DATA_UPDATED_EVENT = 'pdv:data-updated'
 const CASH_REOPEN_GRACE_MS = 30000
 
+type SyncCashRegister = {
+  id: string
+  status?: 'open' | 'closed' | string
+  openedAt?: string
+  closedAt?: string
+  closingAmount?: number
+}
+
+function isSyncCashRegister(value: unknown): value is SyncCashRegister {
+  return !!value && typeof value === 'object' && typeof (value as { id?: unknown }).id === 'string'
+}
+
 function notifyDataUpdated(key: string) {
   window.dispatchEvent(new CustomEvent(DATA_UPDATED_EVENT, { detail: { key } }))
 }
@@ -84,13 +96,17 @@ function syncLocalSnapshot(key: string, data: unknown, options?: { preventShrink
 }
 
 function syncCashRegistersSnapshot(supabaseRegisters: unknown) {
-  const nextRegisters = Array.isArray(supabaseRegisters) ? supabaseRegisters : []
+  const nextRegisters = Array.isArray(supabaseRegisters)
+    ? supabaseRegisters.filter(isSyncCashRegister)
+    : []
   const currentRaw = localStorage.getItem('pdv_cash_registers')
-  const currentRegisters = currentRaw ? JSON.parse(currentRaw) : []
-  const localList = Array.isArray(currentRegisters) ? currentRegisters : []
+  const currentRegisters: unknown = currentRaw ? JSON.parse(currentRaw) : []
+  const localList = Array.isArray(currentRegisters)
+    ? currentRegisters.filter(isSyncCashRegister)
+    : []
 
-  const hasLocalOpen = localList.some((r: any) => r?.status === 'open')
-  const hasSupabaseOpen = nextRegisters.some((r: any) => r?.status === 'open')
+  const hasLocalOpen = localList.some((r) => r.status === 'open')
+  const hasSupabaseOpen = nextRegisters.some((r) => r.status === 'open')
   const justClosedAt = Number(localStorage.getItem('pdv_cash_just_closed_at') || 0)
   const inCloseGraceWindow = justClosedAt > 0 && (Date.now() - justClosedAt) < CASH_REOPEN_GRACE_MS
 
@@ -99,7 +115,54 @@ function syncCashRegistersSnapshot(supabaseRegisters: unknown) {
   // Evita "caixa aberto" falso logo após fechamento local.
   if (!hasLocalOpen && hasSupabaseOpen && inCloseGraceWindow) return
 
-  syncLocalSnapshot('pdv_cash_registers', nextRegisters)
+  const supabaseById = new Map(
+    nextRegisters
+      .map((r) => [r.id, r] as const)
+  )
+
+  const mergedById = new Map<string, SyncCashRegister>()
+
+  for (const localRegister of localList) {
+    if (!localRegister?.id) continue
+
+    const remoteRegister = supabaseById.get(localRegister.id)
+    if (!remoteRegister) {
+      // Mantém registros locais ainda não refletidos no Supabase.
+      mergedById.set(localRegister.id, localRegister)
+      continue
+    }
+
+    // Se local já fechou e remoto ainda está aberto, prioriza local para não "reabrir" caixa.
+    if (localRegister.status === 'closed' && remoteRegister.status === 'open') {
+      mergedById.set(localRegister.id, localRegister)
+      continue
+    }
+
+    // Se ambos fechados, prioriza quem tiver dados de fechamento mais completos.
+    if (localRegister.status === 'closed' && remoteRegister.status === 'closed') {
+      const localHasClosing = localRegister.closingAmount != null || localRegister.closedAt
+      const remoteHasClosing = remoteRegister.closingAmount != null || remoteRegister.closedAt
+      if (localHasClosing && !remoteHasClosing) {
+        mergedById.set(localRegister.id, localRegister)
+        continue
+      }
+    }
+
+    mergedById.set(localRegister.id, remoteRegister)
+  }
+
+  for (const remoteRegister of nextRegisters) {
+    if (!remoteRegister?.id) continue
+    if (!mergedById.has(remoteRegister.id)) {
+      mergedById.set(remoteRegister.id, remoteRegister)
+    }
+  }
+
+  const mergedRegisters = Array.from(mergedById.values()).sort(
+    (a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime()
+  )
+
+  syncLocalSnapshot('pdv_cash_registers', mergedRegisters)
 }
 
 /**

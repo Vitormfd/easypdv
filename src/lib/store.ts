@@ -406,6 +406,7 @@ export function openCashRegister(openingAmount: number): CashRegister {
   registers.push(register);
   set('pdv_cash_registers', registers);
   localStorage.removeItem('pdv_cash_just_closed_at');
+  emitDataUpdated('pdv_cash_registers');
   openCashRegisterInSupabase(register.openingAmount).catch(err => console.error('[Sync] openCashRegister:', err));
   return register;
 }
@@ -452,6 +453,7 @@ export function closeCashRegister(closingAmount: number): CashRegister {
   const registers = getCashRegisters().map(r => r.id === register.id ? updated : r);
   set('pdv_cash_registers', registers);
   localStorage.setItem('pdv_cash_just_closed_at', Date.now().toString());
+  emitDataUpdated('pdv_cash_registers');
   closeCashRegisterInSupabase(updated.closingAmount || 0).catch(err => console.error('[Sync] closeCashRegister:', err));
   return updated;
 }
