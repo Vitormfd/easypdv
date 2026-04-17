@@ -50,7 +50,7 @@ export async function getProductsFromSupabase(): Promise<Product[]> {
 /**
  * Salva um novo produto no Supabase
  */
-export async function saveProductToSupabase(p: Omit<Product, 'id' | 'createdAt'>): Promise<Product | null> {
+export async function saveProductToSupabase(p: Omit<Product, 'id' | 'createdAt'> & { id?: string }): Promise<Product | null> {
   if (!isSupabaseEnabled()) return null
 
   try {
@@ -60,6 +60,7 @@ export async function saveProductToSupabase(p: Omit<Product, 'id' | 'createdAt'>
     const { data, error } = await supabase
       .from('products')
       .insert({
+        ...(p.id ? { id: p.id } : {}),
         user_id: userId,
         code: p.code,
         barcode: p.barcode || null,

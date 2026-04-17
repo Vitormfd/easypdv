@@ -35,7 +35,7 @@ export async function getCustomersFromSupabase(): Promise<Customer[]> {
   }
 }
 
-export async function saveCustomerToSupabase(c: Omit<Customer, 'id' | 'createdAt'>): Promise<Customer | null> {
+export async function saveCustomerToSupabase(c: Omit<Customer, 'id' | 'createdAt'> & { id?: string }): Promise<Customer | null> {
   if (!isSupabaseEnabled()) return null
 
   try {
@@ -45,6 +45,7 @@ export async function saveCustomerToSupabase(c: Omit<Customer, 'id' | 'createdAt
     const { data, error } = await supabase
       .from('customers')
       .insert({
+        ...(c.id ? { id: c.id } : {}),
         user_id: userId,
         name: c.name,
         phone: c.phone,

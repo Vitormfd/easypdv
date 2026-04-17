@@ -81,7 +81,7 @@ export async function getOpenCashRegisterFromSupabase(): Promise<CashRegister | 
   }
 }
 
-export async function openCashRegisterInSupabase(openingAmount: number): Promise<CashRegister | null> {
+export async function openCashRegisterInSupabase(openingAmount: number, localId?: string): Promise<CashRegister | null> {
   if (!isSupabaseEnabled()) return null
 
   try {
@@ -95,6 +95,7 @@ export async function openCashRegisterInSupabase(openingAmount: number): Promise
     const { data, error } = await supabase
       .from('cash_registers')
       .insert({
+        ...(localId ? { id: localId } : {}),
         user_id: userId,
         opening_amount: openingAmount,
         total_sales: 0,

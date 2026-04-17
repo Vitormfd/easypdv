@@ -5,6 +5,7 @@ import {
   signOut as authSignOut,
   type AuthUser,
 } from '@/lib/supabase/services/auth'
+import { syncWithSupabase } from '@/lib/supabase/sync'
 
 export function useAuth() {
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -17,11 +18,17 @@ export function useAuth() {
       setLoading(true)
       const currentUser = await getCurrentUser()
       setUser(currentUser)
+      if (currentUser) {
+        await syncWithSupabase()
+      }
       setLoading(false)
 
       // Subscribe to auth changes
-      unsubscribeRef.current = onAuthStateChange((authUser) => {
+      unsubscribeRef.current = onAuthStateChange(async (authUser) => {
         setUser(authUser)
+        if (authUser) {
+          await syncWithSupabase()
+        }
       })
     }
 

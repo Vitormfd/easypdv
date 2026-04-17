@@ -30,7 +30,7 @@ export async function getDebtPaymentsFromSupabase(): Promise<DebtPayment[]> {
   }
 }
 
-export async function saveDebtPaymentToSupabase(dp: Omit<DebtPayment, 'id' | 'createdAt'>): Promise<DebtPayment | null> {
+export async function saveDebtPaymentToSupabase(dp: Omit<DebtPayment, 'id' | 'createdAt'> & { id?: string }): Promise<DebtPayment | null> {
   if (!isSupabaseEnabled()) return null
 
   try {
@@ -40,6 +40,7 @@ export async function saveDebtPaymentToSupabase(dp: Omit<DebtPayment, 'id' | 'cr
     const { data, error } = await supabase
       .from('debt_payments')
       .insert({
+        ...(dp.id ? { id: dp.id } : {}),
         user_id: userId,
         customer_id: dp.customerId,
         amount: dp.amount,

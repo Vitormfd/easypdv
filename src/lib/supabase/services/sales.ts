@@ -66,7 +66,7 @@ export async function getSalesFromSupabase(): Promise<Sale[]> {
   }
 }
 
-export async function saveSaleToSupabase(s: Omit<Sale, 'id' | 'createdAt'> & { createdAt?: string }): Promise<Sale | null> {
+export async function saveSaleToSupabase(s: Omit<Sale, 'id' | 'createdAt'> & { id?: string; createdAt?: string }): Promise<Sale | null> {
   if (!isSupabaseEnabled()) return null
 
   try {
@@ -77,6 +77,7 @@ export async function saveSaleToSupabase(s: Omit<Sale, 'id' | 'createdAt'> & { c
     const { data: sale, error: saleError } = await supabase
       .from('sales')
       .insert({
+        ...(s.id ? { id: s.id } : {}),
         user_id: userId,
         customer_id: s.customerId || null,
         customer_name: s.customerName || null,

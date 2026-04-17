@@ -33,7 +33,10 @@ function emitDataUpdated(key: string) {
 }
 
 function genId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 const PRODUCT_ACTIVE_MAP_KEY = 'pdv_product_active_map';
@@ -407,7 +410,7 @@ export function openCashRegister(openingAmount: number): CashRegister {
   set('pdv_cash_registers', registers);
   localStorage.removeItem('pdv_cash_just_closed_at');
   emitDataUpdated('pdv_cash_registers');
-  openCashRegisterInSupabase(register.openingAmount).catch(err => console.error('[Sync] openCashRegister:', err));
+  openCashRegisterInSupabase(register.openingAmount, register.id).catch(err => console.error('[Sync] openCashRegister:', err));
   return register;
 }
 

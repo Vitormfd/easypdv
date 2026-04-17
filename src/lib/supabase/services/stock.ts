@@ -29,7 +29,7 @@ export async function getStockEntriesFromSupabase(): Promise<StockEntry[]> {
   }
 }
 
-export async function saveStockEntryToSupabase(se: Omit<StockEntry, 'id' | 'createdAt'>): Promise<StockEntry | null> {
+export async function saveStockEntryToSupabase(se: Omit<StockEntry, 'id' | 'createdAt'> & { id?: string; createdAt?: string }): Promise<StockEntry | null> {
   if (!isSupabaseEnabled()) return null
 
   try {
@@ -39,10 +39,12 @@ export async function saveStockEntryToSupabase(se: Omit<StockEntry, 'id' | 'crea
     const { data, error } = await supabase
       .from('stock_entries')
       .insert({
+        ...(se.id ? { id: se.id } : {}),
         user_id: userId,
         product_id: se.productId,
         quantity: se.quantity,
         type: 'entrada',
+        created_at: se.createdAt || new Date().toISOString(),
       })
       .select()
       .single()

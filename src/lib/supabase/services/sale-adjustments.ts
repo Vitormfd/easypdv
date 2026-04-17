@@ -117,7 +117,7 @@ export async function getAdjustmentsForSaleFromSupabase(saleId: string): Promise
   }
 }
 
-export async function saveSaleAdjustmentToSupabase(adj: Omit<SaleAdjustment, 'id' | 'createdAt'>): Promise<SaleAdjustment | null> {
+export async function saveSaleAdjustmentToSupabase(adj: Omit<SaleAdjustment, 'id' | 'createdAt'> & { id?: string; createdAt?: string }): Promise<SaleAdjustment | null> {
   if (!isSupabaseEnabled()) return null
 
   try {
@@ -128,12 +128,14 @@ export async function saveSaleAdjustmentToSupabase(adj: Omit<SaleAdjustment, 'id
     const { data: adjustment, error: adjError } = await supabase
       .from('sale_adjustments')
       .insert({
+        ...(adj.id ? { id: adj.id } : {}),
         user_id: userId,
         sale_id: adj.saleId,
         previous_total: adj.previousTotal,
         new_total: adj.newTotal,
         difference: adj.difference,
         reason: adj.reason,
+        created_at: adj.createdAt || new Date().toISOString(),
       })
       .select()
       .single()
