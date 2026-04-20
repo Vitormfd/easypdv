@@ -12,9 +12,24 @@ export async function getProductsFromSupabase(): Promise<Product[]> {
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Select only necessary fields instead of *
     const { data, error } = await supabase
       .from('products')
-      .select('*')
+      .select(`
+        id,
+        code,
+        barcode,
+        name,
+        price,
+        cost,
+        stock,
+        unit,
+        min_stock,
+        is_active,
+        status,
+        expiry_date,
+        created_at
+      `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 

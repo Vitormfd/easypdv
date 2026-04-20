@@ -9,9 +9,16 @@ export async function getDebtPaymentsFromSupabase(): Promise<DebtPayment[]> {
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Select only necessary fields instead of *
     const { data, error } = await supabase
       .from('debt_payments')
-      .select('*')
+      .select(`
+        id,
+        customer_id,
+        amount,
+        payment_method,
+        created_at
+      `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
@@ -71,9 +78,16 @@ export async function getDebtPaymentsForCustomerFromSupabase(customerId: string)
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Select only necessary fields instead of *
     const { data, error } = await supabase
       .from('debt_payments')
-      .select('*')
+      .select(`
+        id,
+        customer_id,
+        amount,
+        payment_method,
+        created_at
+      `)
       .eq('user_id', userId)
       .eq('customer_id', customerId)
       .order('created_at', { ascending: false })

@@ -9,9 +9,25 @@ export async function getCashRegistersFromSupabase(): Promise<CashRegister[]> {
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Select only necessary fields instead of *
     const { data, error } = await supabase
       .from('cash_registers')
-      .select('*')
+      .select(`
+        id,
+        opened_at,
+        closed_at,
+        opening_amount,
+        closing_amount,
+        expected_amount,
+        difference,
+        total_sales,
+        total_dinheiro,
+        total_pix,
+        total_cartao,
+        total_fiado,
+        sales_count,
+        status
+      `)
       .eq('user_id', userId)
       .order('opened_at', { ascending: false })
 
@@ -46,9 +62,25 @@ export async function getOpenCashRegisterFromSupabase(): Promise<CashRegister | 
     const userId = await getCurrentUserId()
     if (!userId) return null
 
+    // OPTIMIZATION: Select only necessary fields instead of *
     const { data, error } = await supabase
       .from('cash_registers')
-      .select('*')
+      .select(`
+        id,
+        opened_at,
+        closed_at,
+        opening_amount,
+        closing_amount,
+        expected_amount,
+        difference,
+        total_sales,
+        total_dinheiro,
+        total_pix,
+        total_cartao,
+        total_fiado,
+        sales_count,
+        status
+      `)
       .eq('user_id', userId)
       .eq('status', 'open')
       .order('opened_at', { ascending: false })
@@ -143,40 +175,40 @@ export async function closeCashRegisterInSupabase(closingAmount: number): Promis
     const register = await getOpenCashRegisterFromSupabase()
     if (!register) throw new Error('Nenhum caixa aberto')
 
-    // Buscar sales desde a abertura do caixa
+    // OPTIMIZATION: Fetch all sales with related items and payments in single query
+    // This eliminates the N+1 problem where we'd fetch items/payments for each sale
     const { data: sales, error: salesError } = await supabase
       .from('sales')
-      .select('*')
+      .select(`
+        id,
+        total,
+        customer_id,
+        payment_method,
+        created_at,
+        sale_items(id),
+        sale_payments(method, amount)
+      `)
       .eq('user_id', userId)
       .gte('created_at', new Date(register.openedAt).toISOString())
 
     if (salesError) throw salesError
 
-    // Calcular totais por método de pagamento
+    // Calculate totals by payment method
     let totalDinheiro = 0, totalPix = 0, totalCartao = 0, totalFiado = 0
     let totalSales = 0
     let salesCount = 0
 
     for (const sale of sales || []) {
-      const { data: saleItems } = await supabase
-        .from('sale_items')
-        .select('id')
-        .eq('sale_id', sale.id)
-
-      const isDebtPayment = (saleItems || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0
-
-      const { data: payments } = await supabase
-        .from('sale_payments')
-        .select('*')
-        .eq('sale_id', sale.id)
+      const isDebtPayment = (sale.sale_items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0
 
       if (!isDebtPayment) {
         totalSales += parseFloat(sale.total)
         salesCount += 1
       }
 
-      if (payments && payments.length > 0) {
-        payments.forEach(p => {
+      // Prefer sale_payments table if available, fallback to legacy payment_method
+      if (sale.sale_payments && sale.sale_payments.length > 0) {
+        sale.sale_payments.forEach((p: any) => {
           const amount = parseFloat(p.amount)
           if (p.method === 'dinheiro') totalDinheiro += amount
           else if (p.method === 'pix') totalPix += amount
@@ -184,7 +216,7 @@ export async function closeCashRegisterInSupabase(closingAmount: number): Promis
           else if (p.method === 'fiado') totalFiado += amount
         })
       } else {
-        // Fallback para vendas legadas sem registros em sale_payments
+        // Fallback for legacy sales without sale_payments records
         const amount = parseFloat(sale.total)
         if (sale.payment_method === 'dinheiro') totalDinheiro += amount
         else if (sale.payment_method === 'pix') totalPix += amount

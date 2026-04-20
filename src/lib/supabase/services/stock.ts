@@ -9,9 +9,15 @@ export async function getStockEntriesFromSupabase(): Promise<StockEntry[]> {
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Select only necessary fields instead of *
     const { data, error } = await supabase
       .from('stock_entries')
-      .select('*')
+      .select(`
+        id,
+        product_id,
+        quantity,
+        created_at
+      `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 

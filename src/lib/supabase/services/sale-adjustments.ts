@@ -9,50 +9,45 @@ export async function getSaleAdjustmentsFromSupabase(): Promise<SaleAdjustment[]
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Use single query with joins instead of N+1 queries
     const { data, error } = await supabase
       .from('sale_adjustments')
-      .select('*')
+      .select(`
+        id,
+        sale_id,
+        previous_total,
+        new_total,
+        difference,
+        reason,
+        created_at,
+        adjustment_items(product_id, product_name, quantity, unit_price, subtotal),
+        adjustment_payments(method, amount)
+      `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
     if (error) throw error
 
-    const adjustments: SaleAdjustment[] = []
-
-    for (const adj of data || []) {
-      const { data: items } = await supabase
-        .from('adjustment_items')
-        .select('*')
-        .eq('adjustment_id', adj.id)
-
-      const { data: payments } = await supabase
-        .from('adjustment_payments')
-        .select('*')
-        .eq('adjustment_id', adj.id)
-
-      adjustments.push({
-        id: adj.id,
-        saleId: adj.sale_id,
-        items: (items || []).map(i => ({
-          productId: i.product_id,
-          productName: i.product_name,
-          quantity: parseFloat(i.quantity),
-          unitPrice: parseFloat(i.unit_price),
-          subtotal: parseFloat(i.subtotal),
-        })),
-        previousTotal: parseFloat(adj.previous_total),
-        newTotal: parseFloat(adj.new_total),
-        difference: parseFloat(adj.difference),
-        payments: (payments || []).map(p => ({
-          method: p.method,
-          amount: parseFloat(p.amount),
-        })),
-        reason: adj.reason,
-        createdAt: adj.created_at,
-      })
-    }
-
-    return adjustments
+    return (data || []).map((adj: any) => ({
+      id: adj.id,
+      saleId: adj.sale_id,
+      items: (adj.adjustment_items || []).map((i: any) => ({
+        productId: i.product_id,
+        productName: i.product_name,
+        quantity: parseFloat(i.quantity),
+        unitPrice: parseFloat(i.unit_price),
+        subtotal: parseFloat(i.subtotal),
+      })),
+      previousTotal: parseFloat(adj.previous_total),
+      newTotal: parseFloat(adj.new_total),
+      difference: parseFloat(adj.difference),
+      payments: (adj.adjustment_payments || []).map((p: any) => ({
+        method: p.method,
+        amount: parseFloat(p.amount),
+      })),
+      reason: adj.reason,
+      createdAt: adj.created_at,
+    }))
   } catch (error) {
     console.error('Erro ao buscar ajustes de venda do Supabase:', error)
     return []
@@ -66,51 +61,46 @@ export async function getAdjustmentsForSaleFromSupabase(saleId: string): Promise
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Use single query with joins instead of N+1 queries
     const { data, error } = await supabase
       .from('sale_adjustments')
-      .select('*')
+      .select(`
+        id,
+        sale_id,
+        previous_total,
+        new_total,
+        difference,
+        reason,
+        created_at,
+        adjustment_items(product_id, product_name, quantity, unit_price, subtotal),
+        adjustment_payments(method, amount)
+      `)
       .eq('user_id', userId)
       .eq('sale_id', saleId)
       .order('created_at', { ascending: false })
 
     if (error) throw error
 
-    const adjustments: SaleAdjustment[] = []
-
-    for (const adj of data || []) {
-      const { data: items } = await supabase
-        .from('adjustment_items')
-        .select('*')
-        .eq('adjustment_id', adj.id)
-
-      const { data: payments } = await supabase
-        .from('adjustment_payments')
-        .select('*')
-        .eq('adjustment_id', adj.id)
-
-      adjustments.push({
-        id: adj.id,
-        saleId: adj.sale_id,
-        items: (items || []).map(i => ({
-          productId: i.product_id,
-          productName: i.product_name,
-          quantity: parseFloat(i.quantity),
-          unitPrice: parseFloat(i.unit_price),
-          subtotal: parseFloat(i.subtotal),
-        })),
-        previousTotal: parseFloat(adj.previous_total),
-        newTotal: parseFloat(adj.new_total),
-        difference: parseFloat(adj.difference),
-        payments: (payments || []).map(p => ({
-          method: p.method,
-          amount: parseFloat(p.amount),
-        })),
-        reason: adj.reason,
-        createdAt: adj.created_at,
-      })
-    }
-
-    return adjustments
+    return (data || []).map((adj: any) => ({
+      id: adj.id,
+      saleId: adj.sale_id,
+      items: (adj.adjustment_items || []).map((i: any) => ({
+        productId: i.product_id,
+        productName: i.product_name,
+        quantity: parseFloat(i.quantity),
+        unitPrice: parseFloat(i.unit_price),
+        subtotal: parseFloat(i.subtotal),
+      })),
+      previousTotal: parseFloat(adj.previous_total),
+      newTotal: parseFloat(adj.new_total),
+      difference: parseFloat(adj.difference),
+      payments: (adj.adjustment_payments || []).map((p: any) => ({
+        method: p.method,
+        amount: parseFloat(p.amount),
+      })),
+      reason: adj.reason,
+      createdAt: adj.created_at,
+    }))
   } catch (error) {
     console.error('Erro ao buscar ajustes da venda no Supabase:', error)
     return []

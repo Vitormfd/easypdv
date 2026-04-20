@@ -9,9 +9,21 @@ export async function getCustomersFromSupabase(): Promise<Customer[]> {
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Select only necessary fields instead of *
     const { data, error } = await supabase
       .from('customers')
-      .select('*')
+      .select(`
+        id,
+        name,
+        phone,
+        address,
+        cpf,
+        notes,
+        credit_limit,
+        monthly_limit,
+        status,
+        created_at
+      `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 

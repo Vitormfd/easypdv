@@ -211,6 +211,7 @@ async function syncProductsInBackground() {
       (Array.isArray(localProducts) ? localProducts : []).map((p: any) => [p?.id, p?.isActive])
     )
 
+    // OPTIMIZATION: Preserve local active states and merge with Supabase data
     const mergedProducts = supabaseProducts.map((p: any) => {
       if (typeof p.isActive !== 'boolean') {
         const localIsActive = localActiveById.get(p.id)
@@ -240,9 +241,21 @@ async function syncCustomersInBackground() {
 
 async function syncSalesInBackground() {
   try {
-    const supabaseSales = await getSalesFromSupabase()
-    syncLocalSnapshot('pdv_sales', supabaseSales, { preventShrink: true })
-    console.debug(`[Sync] ${supabaseSales.length} vendas sincronizadas`)
+    // OPTIMIZATION: Only sync recent sales (last 30 days) to reduce payload
+    // Local storage already has older sales
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const supabaseSales = await getSalesByDateRangeFromSupabase(thirtyDaysAgo, new Date())
+    
+    // Merge with existing sales to preserve local-only sales (pending sync)
+    const localSalesRaw = localStorage.getItem('pdv_sales')
+    const localSales = localSalesRaw ? JSON.parse(localSalesRaw) : []
+    const supabaseIds = new Set((supabaseSales || []).map((s: any) => s.id))
+    const localOnlySales = (localSales || []).filter((s: any) => !supabaseIds.has(s.id))
+    
+    const mergedSales = [...supabaseSales, ...localOnlySales]
+    syncLocalSnapshot('pdv_sales', mergedSales, { preventShrink: true })
+    console.debug(`[Sync] ${supabaseSales.length} vendas sincronizadas (últimos 30 dias)`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar vendas:', error)
   }

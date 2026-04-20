@@ -9,57 +9,47 @@ export async function getSalesFromSupabase(): Promise<Sale[]> {
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Use single query with joins instead of N+1 queries
+    // Fetch sales with related items and payments in one call
     const { data: sales, error: salesError } = await supabase
       .from('sales')
-      .select('*')
+      .select(`
+        id,
+        total,
+        payment_method,
+        customer_id,
+        customer_name,
+        created_at,
+        fiado_amount,
+        sale_items(product_id, product_name, quantity, unit_price, subtotal),
+        sale_payments(method, amount)
+      `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
     if (salesError) throw salesError
 
-    const salesToReturn: Sale[] = []
-
-    for (const sale of sales || []) {
-      // Buscar items
-      const { data: items, error: itemsError } = await supabase
-        .from('sale_items')
-        .select('*')
-        .eq('sale_id', sale.id)
-
-      if (itemsError) throw itemsError
-
-      // Buscar payments
-      const { data: payments, error: paymentsError } = await supabase
-        .from('sale_payments')
-        .select('*')
-        .eq('sale_id', sale.id)
-
-      if (paymentsError) throw paymentsError
-
-      salesToReturn.push({
-        id: sale.id,
-        items: (items || []).map(i => ({
-          productId: i.product_id,
-          productName: i.product_name,
-          quantity: parseFloat(i.quantity),
-          unitPrice: parseFloat(i.unit_price),
-          subtotal: parseFloat(i.subtotal),
-        })),
-        total: parseFloat(sale.total),
-        payments: (payments || []).map(p => ({
-          method: p.method,
-          amount: parseFloat(p.amount),
-        })),
-        paymentMethod: sale.payment_method,
-        customerId: sale.customer_id,
-        customerName: sale.customer_name,
-        fiadoAmount: sale.fiado_amount ? parseFloat(sale.fiado_amount) : undefined,
-        isDebtPayment: (items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0,
-        createdAt: sale.created_at,
-      })
-    }
-
-    return salesToReturn
+    return (sales || []).map((sale: any) => ({
+      id: sale.id,
+      items: (sale.sale_items || []).map((i: any) => ({
+        productId: i.product_id,
+        productName: i.product_name,
+        quantity: parseFloat(i.quantity),
+        unitPrice: parseFloat(i.unit_price),
+        subtotal: parseFloat(i.subtotal),
+      })),
+      total: parseFloat(sale.total),
+      payments: (sale.sale_payments || []).map((p: any) => ({
+        method: p.method,
+        amount: parseFloat(p.amount),
+      })),
+      paymentMethod: sale.payment_method,
+      customerId: sale.customer_id,
+      customerName: sale.customer_name,
+      fiadoAmount: sale.fiado_amount ? parseFloat(sale.fiado_amount) : undefined,
+      isDebtPayment: (sale.sale_items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0,
+      createdAt: sale.created_at,
+    }))
   } catch (error) {
     console.error('Erro ao buscar vendas do Supabase:', error)
     return []
@@ -149,9 +139,20 @@ export async function getSalesByDateRangeFromSupabase(start: Date, end: Date): P
     const userId = await getCurrentUserId()
     if (!userId) return []
 
+    // OPTIMIZATION: Single query with joins instead of N+1
     const { data: sales, error: salesError } = await supabase
       .from('sales')
-      .select('*')
+      .select(`
+        id,
+        total,
+        payment_method,
+        customer_id,
+        customer_name,
+        created_at,
+        fiado_amount,
+        sale_items(product_id, product_name, quantity, unit_price, subtotal),
+        sale_payments(method, amount)
+      `)
       .eq('user_id', userId)
       .gte('created_at', start.toISOString())
       .lte('created_at', end.toISOString())
@@ -159,43 +160,27 @@ export async function getSalesByDateRangeFromSupabase(start: Date, end: Date): P
 
     if (salesError) throw salesError
 
-    const salesToReturn: Sale[] = []
-
-    for (const sale of sales || []) {
-      const { data: items } = await supabase
-        .from('sale_items')
-        .select('*')
-        .eq('sale_id', sale.id)
-
-      const { data: payments } = await supabase
-        .from('sale_payments')
-        .select('*')
-        .eq('sale_id', sale.id)
-
-      salesToReturn.push({
-        id: sale.id,
-        items: (items || []).map(i => ({
-          productId: i.product_id,
-          productName: i.product_name,
-          quantity: parseFloat(i.quantity),
-          unitPrice: parseFloat(i.unit_price),
-          subtotal: parseFloat(i.subtotal),
-        })),
-        total: parseFloat(sale.total),
-        payments: (payments || []).map(p => ({
-          method: p.method,
-          amount: parseFloat(p.amount),
-        })),
-        paymentMethod: sale.payment_method,
-        customerId: sale.customer_id,
-        customerName: sale.customer_name,
-        fiadoAmount: sale.fiado_amount ? parseFloat(sale.fiado_amount) : undefined,
-        isDebtPayment: (items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0,
-        createdAt: sale.created_at,
-      })
-    }
-
-    return salesToReturn
+    return (sales || []).map((sale: any) => ({
+      id: sale.id,
+      items: (sale.sale_items || []).map((i: any) => ({
+        productId: i.product_id,
+        productName: i.product_name,
+        quantity: parseFloat(i.quantity),
+        unitPrice: parseFloat(i.unit_price),
+        subtotal: parseFloat(i.subtotal),
+      })),
+      total: parseFloat(sale.total),
+      payments: (sale.sale_payments || []).map((p: any) => ({
+        method: p.method,
+        amount: parseFloat(p.amount),
+      })),
+      paymentMethod: sale.payment_method,
+      customerId: sale.customer_id,
+      customerName: sale.customer_name,
+      fiadoAmount: sale.fiado_amount ? parseFloat(sale.fiado_amount) : undefined,
+      isDebtPayment: (sale.sale_items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0,
+      createdAt: sale.created_at,
+    }))
   } catch (error) {
     console.error('Erro ao buscar vendas pelo período no Supabase:', error)
     return []
