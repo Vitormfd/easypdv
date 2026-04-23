@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS products (
   unit TEXT NOT NULL DEFAULT 'un', -- 'un' | 'kg' | 'lt'
   min_stock DECIMAL(10, 3) NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'inactive'
   expiry_date DATE,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -33,9 +34,16 @@ CREATE INDEX idx_products_user_id ON products(user_id);
 CREATE INDEX idx_products_barcode ON products(barcode) WHERE barcode IS NOT NULL;
 CREATE INDEX idx_products_name ON products(user_id, name);
 CREATE INDEX idx_products_is_active ON products(user_id, is_active);
+CREATE INDEX idx_products_status ON products(user_id, status);
 
 -- Compatibilidade para bases já criadas antes da coluna is_active
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Compatibilidade para bases já criadas antes da coluna status
+ALTER TABLE products ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+UPDATE products
+SET status = CASE WHEN is_active THEN 'active' ELSE 'inactive' END
+WHERE status IS NULL OR status NOT IN ('active', 'inactive');
 
 -- 2. CLIENTES
 CREATE TABLE IF NOT EXISTS customers (

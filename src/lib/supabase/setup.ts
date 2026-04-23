@@ -95,6 +95,8 @@ export async function migrateLocalDataToSupabase(localData: {
             stock: p.stock,
             unit: p.unit,
             min_stock: p.minStock,
+            is_active: p.isActive !== false,
+            status: (p.isActive !== false) ? 'active' : 'inactive',
             expiry_date: p.expiryDate || null,
             created_at: p.createdAt,
           }))

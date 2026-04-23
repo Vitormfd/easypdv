@@ -34,7 +34,13 @@ function hasFiado(sale: Sale): boolean {
 }
 
 function isDebtPaymentSale(sale: Sale): boolean {
-  return !!sale.isDebtPayment || (sale.items?.length === 0 && !!sale.customerId && sale.total > 0);
+  if (sale.isDebtPayment) return true;
+
+  const hasFiadoPayment = getEffectiveSalePayments(sale).some(p => p.method === 'fiado');
+  const hasFiadoAmount = (sale.fiadoAmount || 0) > 0;
+  if (hasFiadoPayment || hasFiadoAmount || sale.paymentMethod === 'fiado') return false;
+
+  return (sale.items?.length === 0 && !!sale.customerId && sale.total > 0);
 }
 
 interface Props {
@@ -123,17 +129,22 @@ export default function SalesHistory({ refreshKey }: Props) {
 
   const handleCancelSale = (sale: Sale) => {
     const currentTotal = getEffectiveSaleTotal(sale);
+    const isDebtPayment = isDebtPaymentSale(sale);
     if (currentTotal <= 0.01) {
-      toast.info('Essa venda ja esta cancelada.');
+      toast.info(isDebtPayment ? 'Esse recebimento ja foi excluido.' : 'Essa venda ja esta cancelada.');
       return;
     }
 
-    const confirmed = window.confirm('Cancelar esta venda? O estoque sera devolvido e a venda sera removida do historico.');
+    const confirmed = window.confirm(
+      isDebtPayment
+        ? 'Excluir este recebimento? O pagamento sera removido do historico e do extrato do cliente.'
+        : 'Cancelar esta venda? O estoque sera devolvido e a venda sera removida do historico.'
+    );
     if (!confirmed) return;
 
     const removed = deleteSale(sale.id);
     if (!removed) {
-      toast.error('Nao foi possivel cancelar a venda.');
+      toast.error(isDebtPayment ? 'Nao foi possivel excluir o recebimento.' : 'Nao foi possivel cancelar a venda.');
       return;
     }
 
@@ -141,7 +152,7 @@ export default function SalesHistory({ refreshKey }: Props) {
       setSelectedSale(null);
     }
     setLocalRefresh(k => k + 1);
-    toast.success('Venda cancelada com sucesso.');
+    toast.success(isDebtPayment ? 'Recebimento excluido com sucesso.' : 'Venda cancelada com sucesso.');
   };
 
   const daySummary = useMemo(() => {
@@ -326,9 +337,9 @@ export default function SalesHistory({ refreshKey }: Props) {
                         </button>
                         <button
                           onClick={() => handleCancelSale(sale)}
-                          disabled={isDebtPayment || isCanceled}
+                          disabled={isCanceled}
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Cancelar venda"
+                          title={isDebtPayment ? 'Excluir recebimento' : 'Cancelar venda'}
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>

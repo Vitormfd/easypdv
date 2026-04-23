@@ -12,8 +12,9 @@ export async function getProductsFromSupabase(): Promise<Product[]> {
     const userId = await getCurrentUserId()
     if (!userId) return []
 
-    // OPTIMIZATION: Select only necessary fields instead of *
-    const { data, error } = await supabase
+    // Query preferencial com status. Se a base ainda nao tiver essa coluna,
+    // faz fallback para manter o app funcional enquanto o schema e atualizado.
+    const initial = await supabase
       .from('products')
       .select(`
         id,
@@ -32,6 +33,32 @@ export async function getProductsFromSupabase(): Promise<Product[]> {
       `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
+
+    let data: any[] | null = initial.data as any[] | null
+    let error: any = initial.error
+
+    if (error && error.code === '42703' && (error.message || '').includes('products.status')) {
+      const fallback = await supabase
+        .from('products')
+        .select(`
+          id,
+          code,
+          barcode,
+          name,
+          price,
+          cost,
+          stock,
+          unit,
+          min_stock,
+          is_active,
+          expiry_date,
+          created_at
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+      data = fallback.data
+      error = fallback.error
+    }
 
     if (error) throw error
 
@@ -86,6 +113,7 @@ export async function saveProductToSupabase(p: Omit<Product, 'id' | 'createdAt'>
         unit: p.unit,
         min_stock: p.minStock,
         is_active: p.isActive !== false,
+        status: (p.isActive !== false) ? 'active' : 'inactive',
         expiry_date: p.expiryDate || null,
       })
       .select()
@@ -139,7 +167,14 @@ export async function updateProductInSupabase(id: string, updates: Partial<Produ
     if (updates.stock !== undefined) updateData.stock = updates.stock
     if (updates.unit) updateData.unit = updates.unit
     if (updates.minStock !== undefined) updateData.min_stock = updates.minStock
-    if (updates.isActive !== undefined) updateData.is_active = updates.isActive
+    if (updates.isActive !== undefined) {
+      updateData.is_active = updates.isActive
+      updateData.status = updates.isActive ? 'active' : 'inactive'
+    }
+    if (updates.status !== undefined) {
+      updateData.status = updates.status
+      updateData.is_active = updates.status !== 'inactive'
+    }
     if (updates.expiryDate !== undefined) updateData.expiry_date = updates.expiryDate
 
     const { error } = await supabase

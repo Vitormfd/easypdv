@@ -71,6 +71,27 @@ export async function saveDebtPaymentToSupabase(dp: Omit<DebtPayment, 'id' | 'cr
   }
 }
 
+export async function deleteDebtPaymentFromSupabase(id: string): Promise<boolean> {
+  if (!isSupabaseEnabled()) return false
+
+  try {
+    const userId = await getCurrentUserId()
+    if (!userId) return false
+
+    const { error } = await supabase
+      .from('debt_payments')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (error) throw error
+    return true
+  } catch (error) {
+    console.error('Erro ao deletar pagamento de dívida do Supabase:', error)
+    return false
+  }
+}
+
 export async function getDebtPaymentsForCustomerFromSupabase(customerId: string): Promise<DebtPayment[]> {
   if (!isSupabaseEnabled()) return []
 

@@ -1,9 +1,9 @@
 import type { Product, Sale, Customer, DebtPayment, StockEntry, SaleAdjustment, CashRegister, PaymentEntry } from '@/types/pdv';
 import { initializeSync } from './supabase/sync';
 import { saveProductToSupabase, updateProductInSupabase, deleteProductFromSupabase } from './supabase/services/products';
-import { saveSaleToSupabase } from './supabase/services/sales';
+import { saveSaleToSupabase, deleteSaleFromSupabase } from './supabase/services/sales';
 import { saveCustomerToSupabase } from './supabase/services/customers';
-import { saveDebtPaymentToSupabase } from './supabase/services/debt-payments';
+import { saveDebtPaymentToSupabase, deleteDebtPaymentFromSupabase } from './supabase/services/debt-payments';
 import { saveStockEntryToSupabase } from './supabase/services/stock';
 import { saveSaleAdjustmentToSupabase } from './supabase/services/sale-adjustments';
 import { openCashRegisterInSupabase, closeCashRegisterInSupabase } from './supabase/services/cash-register';
@@ -142,10 +142,42 @@ export function saveSale(s: Omit<Sale, 'id' | 'createdAt'> & { createdAt?: strin
   return sale;
 }
 
+function findDebtPaymentForSale(sale: Sale): DebtPayment | undefined {
+  if (!sale.isDebtPayment || !sale.customerId) return undefined;
+
+  const paymentMethod = sale.payments?.[0]?.method || sale.paymentMethod;
+  const saleTime = new Date(sale.createdAt).getTime();
+  if (!Number.isFinite(saleTime)) return undefined;
+
+  const candidates = getDebtPayments().filter(payment => {
+    if (payment.customerId !== sale.customerId) return false;
+    if (Math.abs(payment.amount - sale.total) >= 0.01) return false;
+    if ((payment.paymentMethod || 'dinheiro') !== paymentMethod) return false;
+
+    const paymentTime = new Date(payment.createdAt).getTime();
+    if (!Number.isFinite(paymentTime)) return false;
+
+    // Permite pequena diferença de timestamp entre venda espelho e pagamento após sync.
+    return Math.abs(paymentTime - saleTime) <= 5 * 60 * 1000;
+  });
+
+  if (candidates.length === 0) return undefined;
+
+  return candidates
+    .slice()
+    .sort((a, b) => {
+      const aDiff = Math.abs(new Date(a.createdAt).getTime() - saleTime);
+      const bDiff = Math.abs(new Date(b.createdAt).getTime() - saleTime);
+      return aDiff - bDiff;
+    })[0];
+}
+
 export function deleteSale(saleId: string): boolean {
   const sales = getSales();
   const sale = sales.find(s => s.id === saleId);
   if (!sale) return false;
+
+  const linkedDebtPayment = findDebtPaymentForSale(sale);
 
   // Reverte estoque baseado na versão efetiva mais recente da venda.
   if (!sale.isDebtPayment) {
@@ -160,12 +192,20 @@ export function deleteSale(saleId: string): boolean {
 
   set('pdv_sales', sales.filter(s => s.id !== saleId));
   emitDataUpdated('pdv_sales');
+  deleteSaleFromSupabase(saleId).catch(err => console.error('[Sync] deleteSale:', err));
 
   const adjustments = getSaleAdjustments();
   const hasAdjustments = adjustments.some(a => a.saleId === saleId);
   if (hasAdjustments) {
     set('pdv_sale_adjustments', adjustments.filter(a => a.saleId !== saleId));
     emitDataUpdated('pdv_sale_adjustments');
+  }
+
+  if (linkedDebtPayment) {
+    const remainingPayments = getDebtPayments().filter(payment => payment.id !== linkedDebtPayment.id);
+    set('pdv_debt_payments', remainingPayments);
+    emitDataUpdated('pdv_debt_payments');
+    deleteDebtPaymentFromSupabase(linkedDebtPayment.id).catch(err => console.error('[Sync] deleteDebtPayment:', err));
   }
 
   emitDataUpdated('pdv_products');

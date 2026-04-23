@@ -47,7 +47,12 @@ export async function getSalesFromSupabase(): Promise<Sale[]> {
       customerId: sale.customer_id,
       customerName: sale.customer_name,
       fiadoAmount: sale.fiado_amount ? parseFloat(sale.fiado_amount) : undefined,
-      isDebtPayment: (sale.sale_items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0,
+      isDebtPayment:
+        (sale.sale_items || []).length === 0 &&
+        !!sale.customer_id &&
+        parseFloat(sale.total) > 0 &&
+        sale.payment_method !== 'fiado' &&
+        !(sale.fiado_amount && parseFloat(sale.fiado_amount) > 0),
       createdAt: sale.created_at,
     }))
   } catch (error) {
@@ -132,6 +137,27 @@ export async function saveSaleToSupabase(s: Omit<Sale, 'id' | 'createdAt'> & { i
   }
 }
 
+export async function deleteSaleFromSupabase(id: string): Promise<boolean> {
+  if (!isSupabaseEnabled()) return false
+
+  try {
+    const userId = await getCurrentUserId()
+    if (!userId) return false
+
+    const { error } = await supabase
+      .from('sales')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (error) throw error
+    return true
+  } catch (error) {
+    console.error('Erro ao deletar venda do Supabase:', error)
+    return false
+  }
+}
+
 export async function getSalesByDateRangeFromSupabase(start: Date, end: Date): Promise<Sale[]> {
   if (!isSupabaseEnabled()) return []
 
@@ -178,7 +204,12 @@ export async function getSalesByDateRangeFromSupabase(start: Date, end: Date): P
       customerId: sale.customer_id,
       customerName: sale.customer_name,
       fiadoAmount: sale.fiado_amount ? parseFloat(sale.fiado_amount) : undefined,
-      isDebtPayment: (sale.sale_items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0,
+      isDebtPayment:
+        (sale.sale_items || []).length === 0 &&
+        !!sale.customer_id &&
+        parseFloat(sale.total) > 0 &&
+        sale.payment_method !== 'fiado' &&
+        !(sale.fiado_amount && parseFloat(sale.fiado_amount) > 0),
       createdAt: sale.created_at,
     }))
   } catch (error) {

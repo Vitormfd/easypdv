@@ -184,6 +184,7 @@ export async function closeCashRegisterInSupabase(closingAmount: number): Promis
         total,
         customer_id,
         payment_method,
+        fiado_amount,
         created_at,
         sale_items(id),
         sale_payments(method, amount)
@@ -199,7 +200,12 @@ export async function closeCashRegisterInSupabase(closingAmount: number): Promis
     let salesCount = 0
 
     for (const sale of sales || []) {
-      const isDebtPayment = (sale.sale_items || []).length === 0 && !!sale.customer_id && parseFloat(sale.total) > 0
+      const isDebtPayment =
+        (sale.sale_items || []).length === 0 &&
+        !!sale.customer_id &&
+        parseFloat(sale.total) > 0 &&
+        sale.payment_method !== 'fiado' &&
+        !(sale.fiado_amount && parseFloat(sale.fiado_amount) > 0)
 
       if (!isDebtPayment) {
         totalSales += parseFloat(sale.total)
