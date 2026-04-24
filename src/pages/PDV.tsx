@@ -45,6 +45,8 @@ export default function PDVPage() {
   const [autoPrintEnabled, setAutoPrintEnabledState] = useState(isAutoPrintEnabled());
   const [showQuickRegister, setShowQuickRegister] = useState(false);
   const [quickForm, setQuickForm] = useState({ name: '', price: 0, barcode: '', unit: 'un' as ProductUnit });
+  const [saleDiscount, setSaleDiscount] = useState(0);
+  const [saleDiscountType, setSaleDiscountType] = useState<'percent' | 'fixed'>('percent');
   const [customerSearch, setCustomerSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
@@ -90,7 +92,11 @@ export default function PDVPage() {
       ).slice(0, 8)
     : [];
 
-  const total = cart.reduce((acc, item) => acc + item.subtotal, 0);
+  const cartSubtotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
+  const saleDiscountAmount = saleDiscountType === 'percent'
+    ? +(cartSubtotal * (Math.min(100, Math.max(0, saleDiscount)) / 100)).toFixed(2)
+    : +Math.min(cartSubtotal, Math.max(0, saleDiscount)).toFixed(2);
+  const total = +(cartSubtotal - saleDiscountAmount).toFixed(2);
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = Math.max(0, +(total - totalPaid).toFixed(2));
   const hasFiado = payments.some(p => p.method === 'fiado');
@@ -284,6 +290,8 @@ export default function PDVPage() {
       setSaleComplete(false);
       setCashTendered('');
       setCreditWarning(null);
+      setSaleDiscount(0);
+      setSaleDiscountType('percent');
       searchRef.current?.focus();
     }, 2000);
   };
@@ -799,6 +807,55 @@ export default function PDVPage() {
 
             {/* Total */}
             <div className="border-t border-border pt-4 space-y-4">
+              {/* Sale-level discount */}
+              {cart.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Percent className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Desconto na Venda</span>
+                    <div className="ml-auto flex rounded-lg overflow-hidden border border-border text-xs">
+                      <button
+                        onClick={() => setSaleDiscountType('percent')}
+                        className={`px-2 py-1 transition-colors ${
+                          saleDiscountType === 'percent' ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-muted'
+                        }`}
+                      >%</button>
+                      <button
+                        onClick={() => setSaleDiscountType('fixed')}
+                        className={`px-2 py-1 transition-colors ${
+                          saleDiscountType === 'fixed' ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-muted'
+                        }`}
+                      >R$</button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={saleDiscount || ''}
+                      onChange={e => setSaleDiscount(parseFloat(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-24 text-right text-sm bg-card border border-border rounded-lg px-2 py-1.5 tabular-nums"
+                      min={0}
+                      max={saleDiscountType === 'percent' ? 100 : undefined}
+                      step={0.01}
+                    />
+                    <span className="text-sm text-muted-foreground">{saleDiscountType === 'percent' ? '%' : 'R$'}</span>
+                  </div>
+                  {saleDiscountAmount > 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span className="tabular-nums text-muted-foreground line-through">{formatCurrency(cartSubtotal)}</span>
+                    </div>
+                  )}
+                  {saleDiscountAmount > 0 && (
+                    <div className="flex items-center justify-between text-sm text-success font-medium">
+                      <span>Desconto</span>
+                      <span className="tabular-nums">- {formatCurrency(saleDiscountAmount)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <span className="text-lg font-semibold">Total</span>
                 <span className="text-2xl font-extrabold tabular-nums">{formatCurrency(total)}</span>
