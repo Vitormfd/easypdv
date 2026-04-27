@@ -1,5 +1,5 @@
 import type { Product, Sale, Customer, DebtPayment, StockEntry, SaleAdjustment, CashRegister, PaymentEntry } from '@/types/pdv';
-import { initializeSync } from './supabase/sync';
+import { clearPendingSaleDeletion, initializeSync, markSalePendingDeletion } from './supabase/sync';
 import { saveProductToSupabase, updateProductInSupabase, deleteProductFromSupabase } from './supabase/services/products';
 import { saveSaleToSupabase, deleteSaleFromSupabase } from './supabase/services/sales';
 import { saveCustomerToSupabase } from './supabase/services/customers';
@@ -190,9 +190,16 @@ export function deleteSale(saleId: string): boolean {
     });
   }
 
+  markSalePendingDeletion(saleId);
   set('pdv_sales', sales.filter(s => s.id !== saleId));
   emitDataUpdated('pdv_sales');
-  deleteSaleFromSupabase(saleId).catch(err => console.error('[Sync] deleteSale:', err));
+  deleteSaleFromSupabase(saleId)
+    .then((deleted) => {
+      if (deleted) {
+        clearPendingSaleDeletion(saleId);
+      }
+    })
+    .catch(err => console.error('[Sync] deleteSale:', err));
 
   const adjustments = getSaleAdjustments();
   const hasAdjustments = adjustments.some(a => a.saleId === saleId);

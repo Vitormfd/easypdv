@@ -26,6 +26,7 @@ import {
   getSalesFromSupabase,
   saveSaleToSupabase,
   getSalesByDateRangeFromSupabase,
+  deleteSaleFromSupabase,
 } from './services/sales'
 import {
   getCashRegistersFromSupabase,
@@ -55,6 +56,35 @@ let lastSyncTime = 0
 const SYNC_INTERVAL = 5000 // 5 segundos
 const DATA_UPDATED_EVENT = 'pdv:data-updated'
 const CASH_REOPEN_GRACE_MS = 30000
+const PENDING_SALE_DELETIONS_KEY = 'pdv_sales_pending_deletions'
+
+function getPendingSaleDeletionIds(): string[] {
+  try {
+    const raw = localStorage.getItem(PENDING_SALE_DELETIONS_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function setPendingSaleDeletionIds(ids: string[]) {
+  localStorage.setItem(PENDING_SALE_DELETIONS_KEY, JSON.stringify(Array.from(new Set(ids))))
+}
+
+export function markSalePendingDeletion(saleId: string) {
+  if (!saleId) return
+  const ids = getPendingSaleDeletionIds()
+  if (ids.includes(saleId)) return
+  setPendingSaleDeletionIds([...ids, saleId])
+}
+
+export function clearPendingSaleDeletion(saleId: string) {
+  if (!saleId) return
+  const ids = getPendingSaleDeletionIds()
+  if (!ids.includes(saleId)) return
+  setPendingSaleDeletionIds(ids.filter((id) => id !== saleId))
+}
 
 type SyncCashRegister = {
   id: string
@@ -241,21 +271,36 @@ async function syncCustomersInBackground() {
 
 async function syncSalesInBackground() {
   try {
+    const pendingDeletionIds = getPendingSaleDeletionIds()
+    if (pendingDeletionIds.length > 0) {
+      const deletionResults = await Promise.allSettled(
+        pendingDeletionIds.map(async (saleId) => ({ saleId, deleted: await deleteSaleFromSupabase(saleId) }))
+      )
+
+      deletionResults.forEach((result) => {
+        if (result.status === 'fulfilled' && result.value.deleted) {
+          clearPendingSaleDeletion(result.value.saleId)
+        }
+      })
+    }
+
     // OPTIMIZATION: Only sync recent sales (last 30 days) to reduce payload
     // Local storage already has older sales
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
     const supabaseSales = await getSalesByDateRangeFromSupabase(thirtyDaysAgo, new Date())
+    const activePendingDeletionIds = new Set(getPendingSaleDeletionIds())
+    const visibleSupabaseSales = supabaseSales.filter((sale) => !activePendingDeletionIds.has(sale.id))
     
     // Merge with existing sales to preserve local-only sales (pending sync)
     const localSalesRaw = localStorage.getItem('pdv_sales')
     const localSales = localSalesRaw ? JSON.parse(localSalesRaw) : []
-    const supabaseIds = new Set((supabaseSales || []).map((s: any) => s.id))
-    const localOnlySales = (localSales || []).filter((s: any) => !supabaseIds.has(s.id))
+    const supabaseIds = new Set((visibleSupabaseSales || []).map((s: any) => s.id))
+    const localOnlySales = (localSales || []).filter((s: any) => !supabaseIds.has(s.id) && !activePendingDeletionIds.has(s.id))
     
-    const mergedSales = [...supabaseSales, ...localOnlySales]
+    const mergedSales = [...visibleSupabaseSales, ...localOnlySales]
     syncLocalSnapshot('pdv_sales', mergedSales, { preventShrink: true })
-    console.debug(`[Sync] ${supabaseSales.length} vendas sincronizadas (últimos 30 dias)`)
+    console.debug(`[Sync] ${visibleSupabaseSales.length} vendas sincronizadas (últimos 30 dias)`)
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar vendas:', error)
   }
