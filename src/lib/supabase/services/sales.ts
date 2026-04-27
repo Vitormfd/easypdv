@@ -144,14 +144,15 @@ export async function deleteSaleFromSupabase(id: string): Promise<boolean> {
     const userId = await getCurrentUserId()
     if (!userId) return false
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('sales')
       .delete()
       .eq('id', id)
       .eq('user_id', userId)
+      .select('id')
 
     if (error) throw error
-    return true
+    return Array.isArray(data) && data.length > 0
   } catch (error) {
     console.error('Erro ao deletar venda do Supabase:', error)
     return false
