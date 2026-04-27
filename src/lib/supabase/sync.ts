@@ -53,6 +53,9 @@ import {
 // Flag para controlar sincronização
 let isSyncing = false
 let lastSyncTime = 0
+let syncInitialized = false
+let syncIntervalId: ReturnType<typeof setInterval> | null = null
+let onlineHandlerRegistered = false
 const SYNC_INTERVAL = 5000 // 5 segundos
 const DATA_UPDATED_EVENT = 'pdv:data-updated'
 const CASH_REOPEN_GRACE_MS = 30000
@@ -214,13 +217,15 @@ export async function syncWithSupabase() {
 
   try {
     // Sincronizar cada entidade em background
-    syncProductsInBackground()
-    syncCustomersInBackground()
-    syncSalesInBackground()
-    syncCashRegistersInBackground()
-    syncDebtPaymentsInBackground()
-    syncStockEntriesInBackground()
-    syncSaleAdjustmentsInBackground()
+    await Promise.allSettled([
+      syncProductsInBackground(),
+      syncCustomersInBackground(),
+      syncSalesInBackground(),
+      syncCashRegistersInBackground(),
+      syncDebtPaymentsInBackground(),
+      syncStockEntriesInBackground(),
+      syncSaleAdjustmentsInBackground(),
+    ])
   } catch (error) {
     console.error('Erro na sincronização com Supabase:', error)
   } finally {
@@ -356,18 +361,41 @@ async function syncSaleAdjustmentsInBackground() {
  */
 export function initializeSync() {
   if (!isSupabaseEnabled()) return
+  if (syncInitialized) return
+
+  syncInitialized = true
 
   // Sincronizar imediatamente
   syncWithSupabase()
 
   // Sincronizar periodicamente
-  setInterval(() => {
+  syncIntervalId = setInterval(() => {
     syncWithSupabase()
   }, SYNC_INTERVAL)
 
   // Sincronizar quando o app ficar online
-  window.addEventListener('online', () => {
-    console.log('Online - sincronizando com Supabase...')
-    syncWithSupabase()
-  })
+  if (!onlineHandlerRegistered) {
+    window.addEventListener('online', handleOnline)
+    onlineHandlerRegistered = true
+  }
+
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      if (syncIntervalId) {
+        clearInterval(syncIntervalId)
+      }
+      syncIntervalId = null
+      if (onlineHandlerRegistered) {
+        window.removeEventListener('online', handleOnline)
+      }
+      onlineHandlerRegistered = false
+      syncInitialized = false
+      isSyncing = false
+    })
+  }
+}
+
+function handleOnline() {
+  console.log('Online - sincronizando com Supabase...')
+  syncWithSupabase()
 }

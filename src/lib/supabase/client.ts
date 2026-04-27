@@ -15,6 +15,21 @@ export const supabase = createClient(
   SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY
 )
 
+const USER_CACHE_TTL_MS = 10000
+let cachedUserId: string | null = null
+let cachedUserAt = 0
+let inFlightUserIdPromise: Promise<string | null> | null = null
+
+function resetUserCache() {
+  cachedUserId = null
+  cachedUserAt = 0
+  inFlightUserIdPromise = null
+}
+
+supabase.auth.onAuthStateChange(() => {
+  resetUserCache()
+})
+
 // Verificar se Supabase está ativado
 export const isSupabaseEnabled = () => !!SUPABASE_URL && !!SUPABASE_ANON_KEY
 
@@ -30,6 +45,27 @@ export const getCurrentUser = async () => {
 
 // Obter ID do usuário
 export const getCurrentUserId = async () => {
-  const user = await getCurrentUser()
-  return user?.id || null
+  const now = Date.now()
+  if (cachedUserAt > 0 && now - cachedUserAt < USER_CACHE_TTL_MS) {
+    return cachedUserId
+  }
+
+  if (!inFlightUserIdPromise) {
+    inFlightUserIdPromise = getCurrentUser()
+      .then((user) => {
+        cachedUserId = user?.id || null
+        cachedUserAt = Date.now()
+        return cachedUserId
+      })
+      .catch(() => {
+        cachedUserId = null
+        cachedUserAt = Date.now()
+        return null
+      })
+      .finally(() => {
+        inFlightUserIdPromise = null
+      })
+  }
+
+  return inFlightUserIdPromise
 }
