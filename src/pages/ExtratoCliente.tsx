@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, Filter, X, Search, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, Filter, X, Search, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Customer, Sale } from '@/types/pdv';
-import { getCustomers, getSales, getDebtPayments, getSaleAdjustments, getCustomerDebt, getLatestSaleItems, getEffectiveSalePayments, getEffectiveSaleTotal } from '@/lib/store';
+import { getCustomers, getSales, getDebtPayments, getSaleAdjustments, getCustomerDebt, getLatestSaleItems, getEffectiveSalePayments, getEffectiveSaleTotal, deleteSale } from '@/lib/store';
 import { formatCurrency, formatDate, formatDateTime, paymentMethodLabels } from '@/lib/format';
 import PlanGate from '@/components/PlanGate';
+import { toast } from 'sonner';
 
 export default function ExtratoClientePage() {
   return (
@@ -40,9 +41,19 @@ function ExtratoContent() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [hideValues, setHideValues] = useState(false);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [localRefresh, setLocalRefresh] = useState(0);
   const mask = (val: string) => hideValues ? '••••' : val;
 
   useEffect(() => { setCustomers(getCustomers()); }, []);
+
+  useEffect(() => {
+    const handleDataUpdated = () => {
+      setLocalRefresh(prev => prev + 1);
+    };
+
+    window.addEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+    return () => window.removeEventListener('pdv:data-updated', handleDataUpdated as EventListener);
+  }, []);
 
   const selectedCustomer = customers.find(c => c.id === selectedId);
 
@@ -108,7 +119,27 @@ function ExtratoContent() {
 
     // Return newest first
     return result.reverse();
-  }, [selectedId]);
+  }, [selectedId, localRefresh]);
+
+  const handleDeleteSale = (transaction: Transaction) => {
+    if (!transaction.saleId || transaction.type !== 'compra') return;
+
+    const confirmed = window.confirm('Remover esta venda do histórico do cliente?');
+    if (!confirmed) return;
+
+    const removed = deleteSale(transaction.saleId);
+    if (!removed) {
+      toast.error('Não foi possível remover a venda.');
+      return;
+    }
+
+    if (selectedSale?.id === transaction.saleId) {
+      setSelectedSale(null);
+    }
+
+    setLocalRefresh(prev => prev + 1);
+    toast.success('Venda removida com sucesso.');
+  };
 
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
@@ -260,6 +291,7 @@ function ExtratoContent() {
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Descrição</th>
                       <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Valor</th>
                       <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Saldo</th>
+                      <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -289,6 +321,22 @@ function ExtratoContent() {
                         </td>
                         <td className={`px-4 py-3 text-right font-bold tabular-nums ${t.balance > 0 ? 'text-destructive' : 'text-success'}`}>
                           {mask(formatCurrency(t.balance))}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end">
+                            {t.type === 'compra' && t.saleId && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteSale(t);
+                                }}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all active:scale-95"
+                                title="Remover esta venda"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
