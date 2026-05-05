@@ -20,6 +20,7 @@ export async function getStockEntriesFromSupabase(): Promise<StockEntry[]> {
       `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
+      .limit(500)
 
     if (error) throw error
 

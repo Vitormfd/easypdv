@@ -10,6 +10,9 @@ export async function getDebtPaymentsFromSupabase(): Promise<DebtPayment[]> {
     if (!userId) return []
 
     // OPTIMIZATION: Select only necessary fields instead of *
+    const ninetyDaysAgo = new Date()
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+
     const { data, error } = await supabase
       .from('debt_payments')
       .select(`
@@ -20,6 +23,7 @@ export async function getDebtPaymentsFromSupabase(): Promise<DebtPayment[]> {
         created_at
       `)
       .eq('user_id', userId)
+      .gte('created_at', ninetyDaysAgo.toISOString())
       .order('created_at', { ascending: false })
 
     if (error) throw error

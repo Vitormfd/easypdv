@@ -10,6 +10,9 @@ export async function getSaleAdjustmentsFromSupabase(): Promise<SaleAdjustment[]
     if (!userId) return []
 
     // OPTIMIZATION: Use single query with joins instead of N+1 queries
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
     const { data, error } = await supabase
       .from('sale_adjustments')
       .select(`
@@ -24,6 +27,7 @@ export async function getSaleAdjustmentsFromSupabase(): Promise<SaleAdjustment[]
         adjustment_payments(method, amount)
       `)
       .eq('user_id', userId)
+      .gte('created_at', thirtyDaysAgo.toISOString())
       .order('created_at', { ascending: false })
 
     if (error) throw error

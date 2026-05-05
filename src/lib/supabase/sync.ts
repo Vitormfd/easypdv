@@ -56,7 +56,9 @@ let lastSyncTime = 0
 let syncInitialized = false
 let syncIntervalId: ReturnType<typeof setInterval> | null = null
 let onlineHandlerRegistered = false
-const SYNC_INTERVAL = 5000 // 5 segundos
+let slowSyncCycle = 0
+const SYNC_INTERVAL = 30000 // 30 segundos
+const SLOW_SYNC_EVERY = 10  // dados estáticos a cada 10 ciclos (5 minutos)
 const DATA_UPDATED_EVENT = 'pdv:data-updated'
 const CASH_REOPEN_GRACE_MS = 30000
 const PENDING_SALE_DELETIONS_KEY = 'pdv_sales_pending_deletions'
@@ -216,16 +218,25 @@ export async function syncWithSupabase() {
   lastSyncTime = now
 
   try {
-    // Sincronizar cada entidade em background
-    await Promise.allSettled([
-      syncProductsInBackground(),
-      syncCustomersInBackground(),
+    slowSyncCycle = (slowSyncCycle + 1) % SLOW_SYNC_EVERY
+    const isSlowCycle = slowSyncCycle === 0
+
+    // Dados dinâmicos: sincronizados em todo ciclo (30s)
+    const fastSyncs = [
       syncSalesInBackground(),
       syncCashRegistersInBackground(),
+    ]
+
+    // Dados estáticos: sincronizados a cada 10 ciclos (5 min) para reduzir carga no Supabase
+    const slowSyncs = isSlowCycle ? [
+      syncProductsInBackground(),
+      syncCustomersInBackground(),
       syncDebtPaymentsInBackground(),
       syncStockEntriesInBackground(),
       syncSaleAdjustmentsInBackground(),
-    ])
+    ] : []
+
+    await Promise.allSettled([...fastSyncs, ...slowSyncs])
   } catch (error) {
     console.error('Erro na sincronização com Supabase:', error)
   } finally {
