@@ -27,7 +27,11 @@ import {
   saveSaleToSupabase,
   getSalesByDateRangeFromSupabase,
   deleteSaleFromSupabase,
+  backfillSaleItemsToSupabase,
+  getSaleItemsBySaleIdsFromSupabase,
 } from './services/sales'
+import { getLatestAdjustmentItemsBySaleIdsFromSupabase } from './services/sale-adjustments'
+import type { Sale } from '@/types/pdv'
 import {
   getCashRegistersFromSupabase,
   getOpenCashRegisterFromSupabase,
@@ -285,6 +289,127 @@ async function syncCustomersInBackground() {
   }
 }
 
+function readLocalSales(): Sale[] {
+  try {
+    const raw = localStorage.getItem('pdv_sales')
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function isSaleMissingItems(sale: Sale): boolean {
+  if (sale.isDebtPayment) return false
+  if (sale.total <= 0.01) return false
+  return (sale.items?.length ?? 0) === 0
+}
+
+/** Recupera itens de vendas antigas a partir do Supabase (sale_items / ajustes). */
+export async function repairLocalSalesMissingItems(options?: {
+  saleId?: string
+  saleIds?: string[]
+}): Promise<number> {
+  if (!isSupabaseEnabled()) return 0
+
+  const userId = await getCurrentUserId()
+  if (!userId) return 0
+
+  const localSales = readLocalSales()
+  const targetIdSet = options?.saleIds?.length
+    ? new Set(options.saleIds)
+    : options?.saleId
+      ? new Set([options.saleId])
+      : null
+
+  const targets = localSales.filter((sale) => {
+    if (!isSaleMissingItems(sale)) return false
+    if (!targetIdSet) return true
+    return targetIdSet.has(sale.id)
+  })
+
+  if (targets.length === 0) return 0
+
+  const saleIds = targets.map((sale) => sale.id)
+  const itemsBySaleId = await getSaleItemsBySaleIdsFromSupabase(saleIds)
+
+  const stillMissingIds = saleIds.filter((id) => !(itemsBySaleId[id]?.length))
+  if (stillMissingIds.length > 0) {
+    const adjustmentItems = await getLatestAdjustmentItemsBySaleIdsFromSupabase(stillMissingIds)
+    for (const [saleId, items] of Object.entries(adjustmentItems)) {
+      if (items.length > 0) {
+        itemsBySaleId[saleId] = items
+      }
+    }
+  }
+
+  let repaired = 0
+  const updatedSales = localSales.map((sale) => {
+    const recoveredItems = itemsBySaleId[sale.id]
+    if (!recoveredItems?.length || !isSaleMissingItems(sale)) return sale
+    repaired += 1
+    return { ...sale, items: recoveredItems }
+  })
+
+  if (repaired > 0) {
+    syncLocalSnapshot('pdv_sales', updatedSales, { preventShrink: true })
+    console.debug(`[Sync] ${repaired} venda(s) recuperada(s) com itens do Supabase`)
+  }
+
+  return repaired
+}
+
+function mergeSaleItems(localItems: Sale['items'], remoteItems: Sale['items']): Sale['items'] {
+  const local = localItems ?? []
+  const remote = remoteItems ?? []
+
+  if (remote.length === 0) return local
+  if (local.length === 0) return remote
+
+  if (local.length > remote.length) return local
+
+  return remote.map(remoteItem => {
+    const localItem = local.find(li => li.productId === remoteItem.productId)
+    const productName = remoteItem.productName?.trim()
+      ? remoteItem.productName
+      : (localItem?.productName?.trim() || remoteItem.productName)
+
+    return { ...remoteItem, productName }
+  })
+}
+
+function mergeSaleRecord(local: Sale, remote: Sale): Sale {
+  const mergedItems = mergeSaleItems(local.items, remote.items)
+
+  return {
+    ...remote,
+    items: mergedItems,
+    payments: remote.payments?.length ? remote.payments : (local.payments ?? []),
+    customerId: remote.customerId ?? local.customerId,
+    customerName: remote.customerName ?? local.customerName,
+    fiadoAmount: remote.fiadoAmount ?? local.fiadoAmount,
+    isDebtPayment: remote.isDebtPayment ?? local.isDebtPayment,
+  }
+}
+
+function mergeSalesWithLocal(localSales: Sale[], remoteSales: Sale[]): Sale[] {
+  const localById = new Map(localSales.map((sale) => [sale.id, sale]))
+  const mergedById = new Map<string, Sale>()
+
+  for (const remoteSale of remoteSales) {
+    const localSale = localById.get(remoteSale.id)
+    mergedById.set(remoteSale.id, localSale ? mergeSaleRecord(localSale, remoteSale) : remoteSale)
+  }
+
+  for (const localSale of localSales) {
+    if (!mergedById.has(localSale.id)) {
+      mergedById.set(localSale.id, localSale)
+    }
+  }
+
+  return Array.from(mergedById.values())
+}
+
 async function syncSalesInBackground() {
   try {
     const pendingDeletionIds = getPendingSaleDeletionIds()
@@ -308,15 +433,38 @@ async function syncSalesInBackground() {
     const activePendingDeletionIds = new Set(getPendingSaleDeletionIds())
     const visibleSupabaseSales = supabaseSales.filter((sale) => !activePendingDeletionIds.has(sale.id))
     
-    // Merge with existing sales to preserve local-only sales (pending sync)
     const localSalesRaw = localStorage.getItem('pdv_sales')
-    const localSales = localSalesRaw ? JSON.parse(localSalesRaw) : []
-    const supabaseIds = new Set((visibleSupabaseSales || []).map((s: any) => s.id))
-    const localOnlySales = (localSales || []).filter((s: any) => !supabaseIds.has(s.id) && !activePendingDeletionIds.has(s.id))
-    
-    const mergedSales = [...visibleSupabaseSales, ...localOnlySales]
+    const localSales: Sale[] = Array.isArray(localSalesRaw ? JSON.parse(localSalesRaw) : [])
+      ? (localSalesRaw ? JSON.parse(localSalesRaw) : [])
+      : []
+    const visibleLocalSales = localSales.filter((sale) => !activePendingDeletionIds.has(sale.id))
+
+    const recentLocalSales = visibleLocalSales.filter((sale) => {
+      const createdAt = new Date(sale.createdAt)
+      return Number.isFinite(createdAt.getTime()) && createdAt >= thirtyDaysAgo
+    })
+
+    const mergedRecentSales = mergeSalesWithLocal(recentLocalSales, visibleSupabaseSales)
+    const mergedRecentIds = new Set(mergedRecentSales.map((sale) => sale.id))
+    const olderLocalSales = visibleLocalSales.filter((sale) => !mergedRecentIds.has(sale.id))
+    const mergedSales = [...olderLocalSales, ...mergedRecentSales]
+
+    // Repõe itens no Supabase quando o remoto veio sem itens mas o local ainda tem.
+    await Promise.allSettled(
+      mergedRecentSales
+        .filter((sale) => (sale.items?.length ?? 0) > 0)
+        .map(async (sale) => {
+          const remoteSale = visibleSupabaseSales.find((remote) => remote.id === sale.id)
+          if (!remoteSale || (remoteSale.items?.length ?? 0) === 0) {
+            await backfillSaleItemsToSupabase(sale.id, sale.items)
+          }
+        })
+    )
+
     syncLocalSnapshot('pdv_sales', mergedSales, { preventShrink: true })
     console.debug(`[Sync] ${visibleSupabaseSales.length} vendas sincronizadas (últimos 30 dias)`)
+
+    await repairLocalSalesMissingItems()
   } catch (error) {
     console.error('[Sync] Erro ao sincronizar vendas:', error)
   }

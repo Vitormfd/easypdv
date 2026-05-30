@@ -1,6 +1,76 @@
 // src/lib/supabase/services/sale-adjustments.ts
 import { supabase, isSupabaseEnabled, getCurrentUserId } from '../client'
-import type { SaleAdjustment, PaymentEntry } from '@/types/pdv'
+import type { SaleAdjustment, PaymentEntry, Sale } from '@/types/pdv'
+
+type SaleItem = Sale['items'][number]
+
+function mapAdjustmentItemRow(row: {
+  product_id: string
+  product_name: string
+  quantity: number | string
+  unit_price: number | string
+  subtotal: number | string
+}): SaleItem {
+  return {
+    productId: row.product_id,
+    productName: row.product_name,
+    quantity: parseFloat(String(row.quantity)),
+    unitPrice: parseFloat(String(row.unit_price)),
+    subtotal: parseFloat(String(row.subtotal)),
+  }
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+/** Itens do ajuste mais recente por venda (fallback quando sale_items está vazio). */
+export async function getLatestAdjustmentItemsBySaleIdsFromSupabase(
+  saleIds: string[]
+): Promise<Record<string, SaleItem[]>> {
+  if (!isSupabaseEnabled() || saleIds.length === 0) return {}
+
+  try {
+    const userId = await getCurrentUserId()
+    if (!userId) return {}
+
+    const result: Record<string, SaleItem[]> = {}
+
+    for (const chunk of chunkArray(Array.from(new Set(saleIds)), 100)) {
+      const { data, error } = await supabase
+        .from('sale_adjustments')
+        .select(`
+          sale_id,
+          created_at,
+          adjustment_items(product_id, product_name, quantity, unit_price, subtotal)
+        `)
+        .eq('user_id', userId)
+        .in('sale_id', chunk)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      for (const adjustment of data || []) {
+        const saleId = adjustment.sale_id as string
+        if (result[saleId]?.length) continue
+
+        const items = (adjustment.adjustment_items || []).map((item: any) => mapAdjustmentItemRow(item))
+        if (items.length > 0) {
+          result[saleId] = items
+        }
+      }
+    }
+
+    return result
+  } catch (error) {
+    console.error('Erro ao buscar itens de ajustes no Supabase:', error)
+    return {}
+  }
+}
 
 export async function getSaleAdjustmentsFromSupabase(): Promise<SaleAdjustment[]> {
   if (!isSupabaseEnabled()) return []

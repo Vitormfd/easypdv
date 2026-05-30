@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, Filter, X, Search, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Customer, Sale } from '@/types/pdv';
-import { getCustomers, getSales, getDebtPayments, getSaleAdjustments, getCustomerDebt, getLatestSaleItems, getEffectiveSalePayments, getEffectiveSaleTotal, deleteSale } from '@/lib/store';
+import { getCustomers, getSales, getDebtPayments, getSaleAdjustments, getCustomerDebt, getEffectiveSaleItems, getEffectiveSalePayments, getEffectiveSaleTotal, deleteSale, repairLocalSalesMissingItems } from '@/lib/store';
 import { formatCurrency, formatDate, formatDateTime, paymentMethodLabels } from '@/lib/format';
 import PlanGate from '@/components/PlanGate';
 import { toast } from 'sonner';
@@ -41,6 +41,7 @@ function ExtratoContent() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [hideValues, setHideValues] = useState(false);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [detailSale, setDetailSale] = useState<Sale | null>(null);
   const [localRefresh, setLocalRefresh] = useState(0);
   const mask = (val: string) => hideValues ? '••••' : val;
 
@@ -55,6 +56,43 @@ function ExtratoContent() {
     return () => window.removeEventListener('pdv:data-updated', handleDataUpdated as EventListener);
   }, []);
 
+  useEffect(() => {
+    if (!selectedId) return;
+
+    const missingSaleIds = getSales()
+      .filter(s =>
+        s.customerId === selectedId &&
+        !s.isDebtPayment &&
+        s.total > 0.01 &&
+        (s.items?.length ?? 0) === 0
+      )
+      .map(s => s.id);
+
+    if (missingSaleIds.length === 0) return;
+
+    repairLocalSalesMissingItems({ saleIds: missingSaleIds }).then((count) => {
+      if (count > 0) setLocalRefresh(k => k + 1);
+    });
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedSale) {
+      setDetailSale(null);
+      return;
+    }
+
+    setDetailSale(selectedSale);
+    if (getEffectiveSaleItems(selectedSale).length > 0) return;
+
+    repairLocalSalesMissingItems({ saleId: selectedSale.id }).then(() => {
+      const updated = getSales().find(s => s.id === selectedSale.id);
+      if (updated) {
+        setDetailSale(updated);
+        setLocalRefresh(k => k + 1);
+      }
+    });
+  }, [selectedSale]);
+
   const selectedCustomer = customers.find(c => c.id === selectedId);
 
   const transactions = useMemo((): Transaction[] => {
@@ -66,7 +104,7 @@ function ExtratoContent() {
     sales.forEach(s => {
       const fiadoAmt = s.fiadoAmount ?? (s.paymentMethod === 'fiado' ? s.total : 0);
       if (fiadoAmt > 0) {
-        const productNames = s.items.map(i => i.productName).join(', ');
+        const productNames = getEffectiveSaleItems(s).map(i => i.productName).join(', ');
         items.push({
           id: s.id,
           date: s.createdAt,
@@ -349,7 +387,7 @@ function ExtratoContent() {
         </>
       )}
 
-      {selectedSale && (
+      {detailSale && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedSale(null)}>
           <div className="bg-card rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto animate-fade-in-up" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-border">
@@ -360,23 +398,27 @@ function ExtratoContent() {
             </div>
             <div className="p-4 space-y-4">
               <div className="text-sm text-muted-foreground">
-                {formatDateTime(selectedSale.createdAt)}
-                {selectedSale.customerName && <span className="ml-2 font-medium text-foreground">• {selectedSale.customerName}</span>}
+                {formatDateTime(detailSale.createdAt)}
+                {detailSale.customerName && <span className="ml-2 font-medium text-foreground">• {detailSale.customerName}</span>}
               </div>
 
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Itens</p>
-                {getLatestSaleItems(selectedSale).map((item, i) => (
-                  <div key={i} className="flex items-center justify-between py-1.5 text-sm">
-                    <span>{item.quantity}x {item.productName}</span>
-                    <span className="font-medium tabular-nums">{formatCurrency(item.subtotal)}</span>
-                  </div>
-                ))}
+                {getEffectiveSaleItems(detailSale).length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-1.5">Itens não disponíveis para esta venda.</p>
+                ) : (
+                  getEffectiveSaleItems(detailSale).map((item, i) => (
+                    <div key={i} className="flex items-center justify-between py-1.5 text-sm">
+                      <span>{item.quantity}x {item.productName}</span>
+                      <span className="font-medium tabular-nums">{formatCurrency(item.subtotal)}</span>
+                    </div>
+                  ))
+                )}
               </div>
 
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pagamento</p>
-                {getEffectiveSalePayments(selectedSale).map((p, idx) => (
+                {getEffectiveSalePayments(detailSale).map((p, idx) => (
                   <div key={`${p.method}-${idx}`} className="flex items-center justify-between py-1.5 text-sm">
                     <span>{paymentMethodLabels[p.method]}</span>
                     <span className="font-medium tabular-nums">{formatCurrency(p.amount)}</span>
@@ -386,7 +428,7 @@ function ExtratoContent() {
 
               <div className="flex items-center justify-between pt-3 border-t border-border">
                 <span className="font-semibold">Total</span>
-                <span className="text-xl font-extrabold tabular-nums">{formatCurrency(getEffectiveSaleTotal(selectedSale))}</span>
+                <span className="text-xl font-extrabold tabular-nums">{formatCurrency(getEffectiveSaleTotal(detailSale))}</span>
               </div>
             </div>
           </div>

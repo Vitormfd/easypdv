@@ -1,5 +1,5 @@
 import type { Product, Sale, Customer, DebtPayment, StockEntry, SaleAdjustment, CashRegister, PaymentEntry } from '@/types/pdv';
-import { clearPendingSaleDeletion, initializeSync, markSalePendingDeletion } from './supabase/sync';
+import { clearPendingSaleDeletion, initializeSync, markSalePendingDeletion, repairLocalSalesMissingItems } from './supabase/sync';
 import { saveProductToSupabase, updateProductInSupabase, deleteProductFromSupabase } from './supabase/services/products';
 import { saveSaleToSupabase, deleteSaleFromSupabase } from './supabase/services/sales';
 import { saveCustomerToSupabase } from './supabase/services/customers';
@@ -324,13 +324,38 @@ export function saveSaleAdjustment(adj: Omit<SaleAdjustment, 'id' | 'createdAt'>
   return adjustment;
 }
 
+type SaleItem = Sale['items'][number];
+
 /** Get the effective items for a sale considering its latest adjustment */
-export function getLatestSaleItems(sale: Sale) {
+export function getLatestSaleItems(sale: Sale): SaleItem[] {
   const adjustments = getAdjustmentsForSale(sale.id);
-  if (adjustments.length === 0) return sale.items;
+  if (adjustments.length === 0) return sale.items ?? [];
   const latest = adjustments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-  return latest.items;
+  const adjustmentItems = latest.items ?? [];
+  // Ajuste sem itens no remoto não deve apagar os itens originais da venda.
+  if (adjustmentItems.length === 0) return sale.items ?? [];
+  return adjustmentItems;
 }
+
+/** Resolve o nome exibido de um item (histórico não depende do estoque atual). */
+export function resolveSaleItemName(item: SaleItem): string {
+  const stored = item.productName?.trim();
+  if (stored) return stored;
+  const product = getProducts().find(p => p.id === item.productId);
+  if (product?.name?.trim()) return product.name;
+  return 'Produto removido';
+}
+
+/** Itens efetivos da venda com nomes resolvidos para exibição. */
+export function getEffectiveSaleItems(sale: Sale): SaleItem[] {
+  return getLatestSaleItems(sale).map(item => ({
+    ...item,
+    productName: resolveSaleItemName(item),
+  }));
+}
+
+/** Recupera itens de vendas antigas a partir do Supabase. */
+export { repairLocalSalesMissingItems };
 
 /** Get the effective total for a sale considering adjustments */
 export function getEffectiveSaleTotal(sale: Sale): number {

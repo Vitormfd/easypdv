@@ -2,7 +2,7 @@ import { forwardRef } from 'react';
 import type { Sale, PaymentEntry } from '@/types/pdv';
 import { formatCurrency } from '@/lib/format';
 import { paymentMethodLabels } from '@/lib/format';
-import { getPrintConfig, getSystemName, getEffectiveSalePayments, getEffectiveSaleTotal } from '@/lib/store';
+import { getPrintConfig, getSystemName, getEffectiveSalePayments, getEffectiveSaleTotal, getEffectiveSaleItems } from '@/lib/store';
 
 interface Props {
   sale: Sale;
@@ -56,7 +56,7 @@ const ReceiptPrint = forwardRef<HTMLDivElement, Props>(({ sale, marketName }, re
 
       <div className="r-line" />
 
-      {sale.items.map((item, i) => (
+      {getEffectiveSaleItems(sale).map((item, i) => (
         <div key={i}>
           <div className="r-row">
             <span className="r-item-name">{item.productName}</span>

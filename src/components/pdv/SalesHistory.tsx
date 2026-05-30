@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Eye, X, Clock, Receipt, Pencil, Search, Filter, RotateCcw, Printer } from 'lucide-react';
 import type { Sale, PaymentMethod } from '@/types/pdv';
-import { getSales, getAdjustmentsForSale, getEffectiveSalePayments, getEffectiveSaleTotal, getOpenCashRegister, deleteSale } from '@/lib/store';
+import { getSales, getAdjustmentsForSale, getEffectiveSalePayments, getEffectiveSaleTotal, getEffectiveSaleItems, getOpenCashRegister, deleteSale, repairLocalSalesMissingItems } from '@/lib/store';
 import { formatCurrency, paymentMethodLabels } from '@/lib/format';
 import SaleEditDialog from './SaleEditDialog';
 import ReceiptPrint, { printReceipt } from './ReceiptPrint';
@@ -50,6 +50,7 @@ interface Props {
 export default function SalesHistory({ refreshKey }: Props) {
   const [filter, setFilter] = useState<PayFilter>('todas');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [detailSale, setDetailSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [localRefresh, setLocalRefresh] = useState(0);
   const [printingSale, setPrintingSale] = useState<Sale | null>(null);
@@ -70,6 +71,24 @@ export default function SalesHistory({ refreshKey }: Props) {
     window.addEventListener('pdv:data-updated', handleDataUpdated as EventListener);
     return () => window.removeEventListener('pdv:data-updated', handleDataUpdated as EventListener);
   }, []);
+
+  useEffect(() => {
+    if (!selectedSale) {
+      setDetailSale(null);
+      return;
+    }
+
+    setDetailSale(selectedSale);
+    if (getEffectiveSaleItems(selectedSale).length > 0) return;
+
+    repairLocalSalesMissingItems({ saleId: selectedSale.id }).then(() => {
+      const updated = getSales().find(s => s.id === selectedSale.id);
+      if (updated) {
+        setDetailSale(updated);
+        setLocalRefresh(k => k + 1);
+      }
+    });
+  }, [selectedSale]);
 
   const openRegisterOpenedAt = getOpenCashRegister()?.openedAt;
 
@@ -354,33 +373,35 @@ export default function SalesHistory({ refreshKey }: Props) {
       )}
 
       {/* Sale Detail Modal */}
-      {selectedSale && (
+      {detailSale && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedSale(null)}>
           <div className="bg-card rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto animate-fade-in-up" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-border">
-              <h3 className="font-bold text-lg">{isDebtPaymentSale(selectedSale) ? 'Detalhes do Recebimento' : 'Detalhes da Venda'}</h3>
+              <h3 className="font-bold text-lg">{isDebtPaymentSale(detailSale) ? 'Detalhes do Recebimento' : 'Detalhes da Venda'}</h3>
               <button onClick={() => setSelectedSale(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-muted transition-all active:scale-95">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="p-4 space-y-4">
               <div className="text-sm text-muted-foreground">
-                {new Date(selectedSale.createdAt).toLocaleString('pt-BR')}
-                {selectedSale.customerName && <span className="ml-2 font-medium text-foreground">• {selectedSale.customerName}</span>}
+                {new Date(detailSale.createdAt).toLocaleString('pt-BR')}
+                {detailSale.customerName && <span className="ml-2 font-medium text-foreground">• {detailSale.customerName}</span>}
               </div>
 
               {/* Products */}
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  {isDebtPaymentSale(selectedSale) ? 'Origem' : 'Produtos'}
+                  {isDebtPaymentSale(detailSale) ? 'Origem' : 'Produtos'}
                 </p>
-                {isDebtPaymentSale(selectedSale) ? (
+                {isDebtPaymentSale(detailSale) ? (
                   <div className="flex items-center justify-between py-1.5 text-sm">
                     <span>Recebimento de dívida (fiado)</span>
-                    <span className="font-medium tabular-nums">{formatCurrency(selectedSale.total)}</span>
+                    <span className="font-medium tabular-nums">{formatCurrency(detailSale.total)}</span>
                   </div>
+                ) : getEffectiveSaleItems(detailSale).length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-1.5">Itens não disponíveis para esta venda.</p>
                 ) : (
-                  selectedSale.items.map((item, i) => (
+                  getEffectiveSaleItems(detailSale).map((item, i) => (
                     <div key={i} className="flex items-center justify-between py-1.5 text-sm">
                       <span>{item.quantity}x {item.productName}</span>
                       <span className="font-medium tabular-nums">{formatCurrency(item.subtotal)}</span>
@@ -392,7 +413,7 @@ export default function SalesHistory({ refreshKey }: Props) {
               {/* Payments */}
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pagamento</p>
-                {getEffectiveSalePayments(selectedSale).map((p, paymentIndex) => (
+                {getEffectiveSalePayments(detailSale).map((p, paymentIndex) => (
                   <div key={`${p.method}-${paymentIndex}`} className="flex items-center justify-between py-1.5 text-sm">
                     <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${paymentColor(p.method)}`}>
                       {paymentMethodLabels[p.method]}
@@ -404,14 +425,14 @@ export default function SalesHistory({ refreshKey }: Props) {
 
               {/* Total */}
               {(() => {
-                const adjTotal = getEffectiveSaleTotal(selectedSale);
-                const isAdj = adjTotal !== selectedSale.total;
+                const adjTotal = getEffectiveSaleTotal(detailSale);
+                const isAdj = adjTotal !== detailSale.total;
                 return (
                   <div className="flex items-center justify-between pt-3 border-t border-border">
                     <span className="font-semibold">Total</span>
                     <div className="text-right">
                       <span className="text-xl font-extrabold tabular-nums">{formatCurrency(adjTotal)}</span>
-                      {isAdj && <span className="block text-xs text-muted-foreground line-through">{formatCurrency(selectedSale.total)}</span>}
+                      {isAdj && <span className="block text-xs text-muted-foreground line-through">{formatCurrency(detailSale.total)}</span>}
                     </div>
                   </div>
                 );
